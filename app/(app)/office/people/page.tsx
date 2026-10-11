@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import clsx from 'clsx';
-import { Plus, Search, X } from 'lucide-react';
+import { Plus, Search, Upload, X } from 'lucide-react';
 import { Badge, Card, EmptyState, LinkButton, PageHeader, TableWrap } from '@/components/ui/primitives';
 import { academicYearStart, yearLabel, yearOfStudy } from '@/lib/academic';
 import { ROLE_LABEL } from '@/lib/format';
@@ -9,7 +9,7 @@ import { requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import type { Person } from '@/lib/types';
 import { BatchAction } from './batch-actions';
-import { PeopleImport } from './people-import';
+import { ViewSelect } from './view-select';
 
 export const metadata: Metadata = { title: 'People' };
 const PAGE = 100;
@@ -79,47 +79,55 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
       <PageHeader
         title="People"
         description="The roster. Only active people listed here can sign in."
-        action={<LinkButton href="/office/people/new"><Plus className="h-4 w-4" />Add person</LinkButton>}
+        action={
+          <>
+            <LinkButton href="/office/people/import" variant="secondary"><Upload className="h-4 w-4" />Import CSV</LinkButton>
+            <LinkButton href="/office/people/new"><Plus className="h-4 w-4" />Add person</LinkButton>
+          </>
+        }
       />
 
-      <div className="mb-4 flex flex-col-reverse gap-3 border-b border-line lg:flex-row lg:items-end lg:justify-between">
-        <nav aria-label="People views" className="-mb-px flex gap-5 overflow-x-auto">
-          {VIEWS.map((v) => (
-            <Link key={v.key} href={href({ view: v.key === 'all' ? undefined : v.key, page: undefined })} aria-current={view === v.key ? 'page' : undefined}
-              className={clsx('whitespace-nowrap border-b-2 px-1 pb-2.5 text-sm font-semibold', view === v.key ? 'border-gold-500 text-ink' : 'border-transparent text-ink-muted hover:text-ink')}>
-              {v.label}
-            </Link>
-          ))}
-        </nav>
-        <form role="search" className="relative w-full pb-0 lg:mb-2 lg:w-72">
-          {view !== 'all' && <input type="hidden" name="view" value={view} />}
-          {batchFilter && <input type="hidden" name="batch" value={batchFilter} />}
-          {sp.sort && <input type="hidden" name="sort" value={sp.sort} />}
-          <label htmlFor="people-search" className="sr-only">Search people</label>
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" aria-hidden />
-          <input id="people-search" name="q" type="search" defaultValue={sp.q} placeholder="Search name, email or roll no." className="field-input pl-9" />
-        </form>
+      {/* Views: tabs on wide screens (all eight fit from 1280px), a dropdown otherwise */}
+      <nav aria-label="People views" className="mb-4 hidden gap-5 border-b border-line xl:flex">
+        {VIEWS.map((v) => (
+          <Link key={v.key} href={href({ view: v.key === 'all' ? undefined : v.key, page: undefined })} aria-current={view === v.key ? 'page' : undefined}
+            className={clsx('-mb-px whitespace-nowrap border-b-2 px-1 pb-2.5 text-sm font-semibold', view === v.key ? 'border-gold-500 text-ink' : 'border-transparent text-ink-muted hover:text-ink')}>
+            {v.label}
+          </Link>
+        ))}
+      </nav>
+      <div className="mb-4 max-w-xs xl:hidden">
+        <ViewSelect
+          value={view}
+          options={VIEWS.map((v) => ({ value: v.key, label: v.label, href: href({ view: v.key === 'all' ? undefined : v.key, page: undefined }) }))}
+        />
       </div>
 
       <Card>
-        {(batchFilter || q) && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3 text-sm">
-            <span className="text-ink-muted">Showing</span>
-            {batchFilter && (
-              <Link href={href({ batch: undefined, page: undefined })} className="inline-flex items-center gap-1.5 rounded bg-navy-50 px-2.5 py-1 font-semibold text-navy-700 ring-1 ring-inset ring-navy-100 hover:bg-navy-100">
-                Batch {batchFilter} <X className="h-3.5 w-3.5" aria-label="Remove batch filter" />
-              </Link>
-            )}
-            {q && (
-              <Link href={href({ q: undefined, page: undefined })} className="inline-flex items-center gap-1.5 rounded bg-navy-50 px-2.5 py-1 font-semibold text-navy-700 ring-1 ring-inset ring-navy-100 hover:bg-navy-100">
-                “{q}” <X className="h-3.5 w-3.5" aria-label="Clear search" />
-              </Link>
-            )}
-          </div>
-        )}
+        <div className="flex flex-col gap-3 border-b border-line px-5 py-3.5 sm:flex-row sm:flex-wrap sm:items-center">
+          <form role="search" className="relative w-full sm:w-80">
+            {view !== 'all' && <input type="hidden" name="view" value={view} />}
+            {batchFilter && <input type="hidden" name="batch" value={batchFilter} />}
+            {sp.sort && <input type="hidden" name="sort" value={sp.sort} />}
+            <label htmlFor="people-search" className="sr-only">Search people</label>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" aria-hidden />
+            <input id="people-search" name="q" type="search" defaultValue={sp.q} placeholder="Search name, email or roll no." className="field-input pl-9" />
+          </form>
+          {batchFilter && (
+            <Link href={href({ batch: undefined, page: undefined })} className="inline-flex w-fit items-center gap-1.5 rounded bg-navy-50 px-2.5 py-1 text-sm font-semibold text-navy-700 ring-1 ring-inset ring-navy-100 hover:bg-navy-100">
+              Batch {batchFilter} <X className="h-3.5 w-3.5" aria-label="Remove batch filter" />
+            </Link>
+          )}
+          {q && (
+            <Link href={href({ q: undefined, page: undefined })} className="inline-flex w-fit items-center gap-1.5 rounded bg-navy-50 px-2.5 py-1 text-sm font-semibold text-navy-700 ring-1 ring-inset ring-navy-100 hover:bg-navy-100">
+              “{q}” <X className="h-3.5 w-3.5" aria-label="Clear search" />
+            </Link>
+          )}
+          <span className="text-sm text-ink-muted sm:ml-auto">{total} {total === 1 ? 'person' : 'people'}</span>
+        </div>
         {people.length === 0 ? (
           <EmptyState title={total === 0 && view === 'all' && !q && !batchFilter ? 'No one on the roster yet' : 'No one matches'}>
-            {total === 0 && view === 'all' && !q && !batchFilter ? 'Import the student and faculty lists below, or add people one at a time.' : undefined}
+            {total === 0 && view === 'all' && !q && !batchFilter ? <>Use <Link href="/office/people/import" className="font-semibold text-navy-700 hover:underline">Import CSV</Link> for whole batches, or Add person for one at a time.</> : undefined}
           </EmptyState>
         ) : (
           <TableWrap>
@@ -165,7 +173,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
         )}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3 text-sm text-ink-muted">
           <span>
-            {total} {total === 1 ? 'person' : 'people'}{pages > 1 ? ` · page ${page} of ${pages}` : ''} · Sorted by{' '}
+            {pages > 1 ? `Page ${page} of ${pages} · ` : ''}Sorted by{' '}
             {sortByName ? 'name' : 'roll number'} ·{' '}
             <Link href={href({ sort: sortByName ? undefined : 'name', page: undefined })} className="font-semibold text-navy-700 hover:underline">
               Sort by {sortByName ? 'roll number' : 'name'}
@@ -207,9 +215,6 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
         )}
       </Card>
 
-      <Card className="mt-6" title="Import from a spreadsheet" description="Add or update many people at once; matching is by email. Roles: student, faculty, dean, office (combine with a semicolon, for example faculty;dean). Students need student_no, batch and section.">
-        <div className="px-5 py-4"><PeopleImport /></div>
-      </Card>
     </>
   );
 }
