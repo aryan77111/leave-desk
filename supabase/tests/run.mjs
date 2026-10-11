@@ -35,7 +35,7 @@ grant usage on schema storage to anon, authenticated;
 grant select, insert on storage.objects to authenticated;
 `;
 await db.exec(stub);
-for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql']) {
+for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql', '20261012000010_timetable_sync.sql']) {
   try { await db.exec(readFileSync(new URL(f, MIG), 'utf8')); console.log('applied', f); }
   catch (e) { console.error('FAILED applying', f, '\n', e.message); process.exit(1); }
 }
@@ -301,6 +301,92 @@ await throwsLike(() => as(U.aryan, () => db.query(`select public.submit_leave('m
 ok((await db.query(`select id from leave_requests where student_id = (select id from people where email = 'aryan@stu.college.edu')`)).rows.length > 0, 'their leave history is kept');
 const back = await as(U.office, () => one(`select public.set_batch_active('2025-27', 'A', true) as n`));
 ok(back.n === 2, 'restoring the batch reactivates them');
+
+// Timetable sync ------------------------------------------------------------------
+console.log('\nTimetable sync');
+const fid = async e => (await one(`select id from people where email = $1`, [e])).id;
+const F = { meera: await fid('meera@college.edu'), sanjay: await fid('sanjay@college.edu'), chair: await fid('chair@college.edu') };
+await db.query(`insert into timetable_sources (batch, file_id) values ('2025-27', 'abcdefghijklmnopqrstuvwxyz12')`);
+const S = (date, start, code, faculty, section = 'A', elective = false, end = null) =>
+  ({ date, start, end: end ?? `${String(Number(start.slice(0, 2)) + 1).padStart(2, '0')}:${start.slice(3)}`, code, name: code + ' course', faculty_id: faculty, section, elective });
+const base = [
+  S(day(30), '09:45', 'TAMA', F.meera), S(day(30), '09:45', 'TAMA', F.meera, 'B'),
+  S(day(30), '11:30', 'MDI', F.sanjay, 'A', true), S(day(30), '11:30', 'MDI', F.sanjay, 'B', true),
+  S(day(31), '09:45', 'TAMA', F.meera), S(day(31), '09:45', 'TAMA', F.meera, 'B'),
+  S(day(40), '09:45', 'TAMA', F.meera), S(day(40), '09:45', 'TAMA', F.meera, 'B'),
+];
+const apply = (rows, prot = [], force = false) => one(`select public.apply_timetable('2025-27', $1::jsonb, $2::jsonb, $3, 'h', '{}'::jsonb) as r`, [JSON.stringify(rows), JSON.stringify(prot), force]).then(x => x.r);
+let r1 = await apply(base);
+ok(r1.status === 'ok' && r1.added === 8, `first sync adds ${r1.added} sessions`);
+r1 = await apply(base);
+ok(r1.added + r1.changed + r1.cancelled === 0, 'syncing the same sheet again changes nothing');
+ok((await one(`select last_message from timetable_sources where batch = '2025-27'`)).last_message.startsWith('Up to date'), 'source shows up to date');
+await throwsLike(() => as(U.aryan, () => apply(base)), /permission denied/, 'students cannot call the sync');
+
+const sess = async (code, d, t, sec = 'A') => (await one(`select id, cancelled, faculty_id from class_sessions where batch = '2025-27' and section = $4 and course_code = $1 and public.local_date(starts_at) = $2 and to_char(starts_at at time zone 'Asia/Kolkata', 'HH24:MI') = $3`, [code, d, t, sec]));
+const tama30 = await sess('TAMA', day(30), '09:45'), mdi30 = await sess('MDI', day(30), '11:30');
+const tama31 = await sess('TAMA', day(31), '09:45');
+const lv = await as(U.aryan, () => one(`select public.submit_leave('official', 'Conference', $1::date, $2::date, $3::uuid[]) as ref`, [day(30), day(31), [tama30.id, mdi30.id, tama31.id]]));
+const lvId = (await one(`select id from leave_requests where ref = $1`, [lv.ref])).id;
+const mailsBefore = (await one(`select count(*)::int n from email_outbox`)).n;
+
+// The office moves TAMA on day 30 to the afternoon, hands MDI to Meera, adds an MDI make-up,
+// a new core ECRM class with the Chair, and a CIB elective class Aryan never listed.
+const edited = [
+  S(day(30), '14:30', 'TAMA', F.meera), S(day(30), '14:30', 'TAMA', F.meera, 'B'),
+  S(day(30), '11:30', 'MDI', F.meera, 'A', true), S(day(30), '11:30', 'MDI', F.meera, 'B', true),
+  S(day(31), '09:45', 'TAMA', F.meera), S(day(31), '09:45', 'TAMA', F.meera, 'B'),
+  S(day(31), '11:30', 'MDI', F.meera, 'A', true), S(day(31), '11:30', 'MDI', F.meera, 'B', true),
+  S(day(31), '08:00', 'ECRM', F.chair), S(day(31), '16:15', 'CIB', F.sanjay, 'A', true),
+  S(day(40), '09:45', 'TAMA', F.meera), S(day(40), '09:45', 'TAMA', F.meera, 'B'),
+];
+const r2 = await apply(edited);
+ok(r2.added === 6 && r2.cancelled === 2 && r2.changed === 2 && r2.leaves_affected === 1, `edit applied: ${r2.added} added, ${r2.changed} changed, ${r2.cancelled} cancelled, ${r2.leaves_affected} leave affected`);
+ok((await sess('TAMA', day(30), '09:45')).cancelled === true, 'class taken out of the sheet is marked cancelled, not deleted');
+const onLeave = (await db.query(`select c.course_code, to_char(c.starts_at at time zone 'Asia/Kolkata', 'HH24:MI') t, public.local_date(c.starts_at)::text d, c.cancelled from leave_sessions ls join class_sessions c on c.id = ls.session_id where ls.leave_id = $1 order by c.starts_at`, [lvId])).rows;
+const has = (code, d, t) => onLeave.some(x => x.course_code === code && x.d === d && x.t === t);
+ok(has('TAMA', day(30), '14:30'), 'moved core class is added to the leave');
+ok(has('ECRM', day(31), '08:00'), 'new core class is added to the leave');
+ok(has('MDI', day(31), '11:30'), 'new class of an elective already on the leave is added');
+ok(!has('CIB', day(31), '16:15'), 'elective the student never listed is not added');
+ok(has('TAMA', day(30), '09:45'), 'cancelled class stays on the record for history');
+const ev = await one(`select message from leave_events where leave_id = $1 and kind = 'timetable_changed'`, [lvId]);
+ok(ev && /Removed/.test(ev.message) && /CIB/.test(ev.message), 'student timeline explains the change, including the unlisted elective');
+const newMails = (await db.query(`select kind, to_email from email_outbox order by id offset $1`, [mailsBefore])).rows;
+ok(newMails.some(m => m.kind === 'student_timetable_change' && m.to_email === 'aryan@stu.college.edu'), 'student is emailed');
+ok(newMails.some(m => m.kind === 'faculty_notice' && m.to_email === 'chair@college.edu'), 'faculty new to the leave get a full notice with a response link');
+ok((await one(`select count(*)::int n from faculty_acks where leave_id = $1 and faculty_id = $2`, [lvId, F.chair])).n === 1, 'and an acknowledgement is opened for them');
+ok(newMails.some(m => m.kind === 'faculty_timetable_change' && m.to_email === 'meera@college.edu'), 'faculty already notified get a short update');
+ok(!newMails.some(m => m.to_email === 'priya@stu.college.edu'), 'students without leave on those dates are not emailed');
+ok((await one(`select count(*)::int n from timetable_changes where kind = 'changed' and detail like 'Faculty:%'`)).n === 2, 'faculty change is logged for the office');
+
+// A cell the parser could not read protects that slot.
+const missing = edited.filter(x => !(x.code === 'CIB'));
+const r3 = await apply(missing, [{ date: day(31), start: '16:15' }]);
+ok(r3.cancelled === 0 && (await sess('CIB', day(31), '16:15')).cancelled === false, 'session in an unreadable slot is left alone');
+
+// Safety stop and the past.
+await db.query(`insert into class_sessions (course_code, faculty_id, batch, section, starts_at, source) values ('OLD', $1, '2025-27', 'A', now() - interval '2 days', 'sheet')`, [F.meera]);
+const many = [];
+for (let i = 41; i < 71; i++) many.push(S(day(i), '09:45', 'SLIM', F.sanjay), S(day(i), '09:45', 'SLIM', F.sanjay, 'B'));
+await apply([...missing, ...many], [{ date: day(31), start: '16:15' }]);
+const blocked = await apply([]);
+ok(blocked.status === 'blocked' && blocked.would_cancel > 60, `empty sheet is refused (would cancel ${blocked.would_cancel})`);
+ok((await one(`select count(*)::int n from class_sessions where batch = '2025-27' and source = 'sheet' and not cancelled and starts_at > now()`)).n > 60, 'nothing was cancelled');
+ok((await one(`select last_status from timetable_sources where batch = '2025-27'`)).last_status === 'blocked', 'source shows the stop');
+const forced = await apply([], [], true);
+ok(forced.status === 'ok' && forced.cancelled === blocked.would_cancel, 'Sync anyway applies it');
+ok((await one(`select cancelled from class_sessions where course_code = 'OLD'`)).cancelled === false, 'past sessions are never touched');
+
+// Access
+const studentSees = await as(U.aryan, () => db.query(`select * from timetable_sources`));
+ok(studentSees.rows.length === 0, 'students cannot see the sheet settings');
+await as(U.office, () => db.query(`insert into course_codes (batch, course_code, variant, course_name, faculty_id, sections) values ('2025-27', 'TAMA', 'A', 'Talent Management', $1, '{A}')`, [F.meera]));
+ok((await as(U.office, () => db.query(`select * from course_codes`))).rows.length === 1, 'office manages course codes');
+await throwsLike(() => as(U.office, () => db.query(`update timetable_sources set last_status = 'ok'`)), /permission denied/, 'office cannot fake the sync status');
+await as(U.office, () => db.query(`update timetable_sources set enabled = false`));
+ok((await one(`select enabled from timetable_sources`)).enabled === false, 'office can pause a sheet');
+await throwsLike(() => as(U.aryan, () => db.query(`insert into course_codes (batch, course_code, course_name, faculty_id, sections) values ('2025-27', 'HACK', 'x', $1, '{A}')`, [F.meera])), /row-level security/, 'students cannot add course codes');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
