@@ -55,7 +55,7 @@ export function CertificateUpload({ leaveId, leaveRef, userId, deadline }: { lea
         </button>
         <input ref={input} type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" className="sr-only"
           onChange={(e) => pick(e.target.files?.[0] ?? null)} aria-label="Medical certificate file" />
-        <p className="text-xs text-ink-muted">Seen only by the approver and the Dean HRM Office. Faculty cannot see it.</p>
+        <p className="text-xs text-ink-muted">Seen only by the Dean and the Dean HRM Office. Faculty cannot see it.</p>
         {error && <p role="alert" className="text-sm text-bad-fg">{error}</p>}
         <Button onClick={upload} disabled={!file || busy}>{busy ? 'Uploading…' : 'Upload certificate'}</Button>
       </div>

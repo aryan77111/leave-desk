@@ -41,7 +41,7 @@ export default async function StudentLeavePage({ params, searchParams }: {
     aside = (
       <Card title="Changed your plans?">
         <div className="px-5 py-4">
-          <p className="mb-4 text-sm text-ink-soft">You can withdraw this request until it is decided. Your faculty and the approver will be told.</p>
+          <p className="mb-4 text-sm text-ink-soft">You can withdraw this request until it is decided. Your faculty and the Dean will be told.</p>
           <WithdrawButton leaveId={leave.id} leaveRef={leave.ref} />
         </div>
       </Card>
@@ -57,7 +57,7 @@ export default async function StudentLeavePage({ params, searchParams }: {
       />
       {submitted && leave.status === 'submitted' && (
         <Alert tone="ok" className="mb-6" title="Request submitted">
-          Your faculty have been emailed and the request is with the approver. You will get an email when it is decided.
+          Your faculty have been emailed and the request is with the Dean. You will get an email when it is decided.
         </Alert>
       )}
       <LeaveDetail leave={leave} events={events} audience="student" aside={aside} />

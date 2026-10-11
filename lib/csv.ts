@@ -23,7 +23,7 @@ const SESSION_ALIASES: Record<string, string> = {
   cancelled: 'cancelled', canceled: 'cancelled',
 };
 
-export const PEOPLE_COLUMNS = ['email', 'full_name', 'roles', 'student_no', 'programme', 'batch', 'section', 'approver_level'] as const;
+export const PEOPLE_COLUMNS = ['email', 'full_name', 'roles', 'student_no', 'programme', 'batch', 'section'] as const;
 export const SESSION_COLUMNS = ['date', 'start_time', 'end_time', 'course_code', 'course_name', 'faculty_email', 'batch', 'section'] as const;
 
 function remap(rows: Record<string, unknown>[], aliases: Record<string, string>) {

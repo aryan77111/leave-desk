@@ -3,11 +3,11 @@
 Digital student leave approvals for the MBA-HRM programme. It replaces the paper leave form.
 
 - **Students** apply online. Missed sessions are filled in from the timetable, and medical certificates are uploaded online.
-- **Faculty** acknowledge with one tap from the email (no sign-in), add a note for the student, or raise a concern with the approver.
-- **Approvers** (Programme Chair, Dean) decide from one queue that shows faculty notes and concerns.
+- **Faculty** acknowledge with one tap from the email (no sign-in), add a note for the student, or raise a concern with the Dean.
+- **The Dean** decides every request from one queue that shows faculty notes and concerns.
 - **The Dean HRM Office** manages the roster and timetable, checks certificates, exports attendance and sets the rules.
 
-Automatic jobs handle deemed acknowledgment, approver reminders, certificate reminders and auto-cancellation.
+Automatic jobs handle deemed acknowledgment, reminders to the Dean, certificate reminders and auto-cancellation.
 
 ## How it is built
 
@@ -25,7 +25,7 @@ All workflow rules live in the database (`supabase/migrations`). The app calls f
 
 - Students see only their own requests.
 - Faculty see only notices for their own sessions, and never medical reasons or certificates.
-- Concerns raised by faculty are visible only to approvers and the Dean HRM Office.
+- Concerns raised by faculty are visible only to the Dean and the Dean HRM Office.
 
 ## Already done
 
@@ -72,8 +72,7 @@ Emails wait in the outbox until both are set; nothing is lost. Without a verifie
 
 ### 5. Load the roster and timetable
 - **People → Import people** (download the template first).
-  - Roles: `student`, `faculty`, `approver`, `office`. Combine roles with `;`.
-  - Approvers need `approver_level` set to `chair` or `dean`.
+  - Roles: `student`, `faculty`, `dean`, `office`. Combine roles with `;` (for example `faculty;dean`).
   - Students need `student_no`, `batch` and `section`.
 - **Timetable → Import timetable**: one row per session. Faculty must already be on the roster. Re-importing updates sessions instead of duplicating them.
 
@@ -86,9 +85,9 @@ The Dean HRM Office overview shows a checklist until these steps are done.
 | Notice for family and university leave | 48 hours |
 | Time to apply for medical leave | 24 hours after the first day ends |
 | Faculty response window, then deemed acknowledged | 48 hours |
-| Approver reminder | after 48 hours |
+| Reminder to the Dean | after 48 hours |
 | Medical certificate deadline | 2 days after resuming |
-| Programme Chair decides up to | 3 days (longer leave, and all family-reason leave, goes to the Dean) |
+| Who decides | The Dean, for every request |
 | Longest leave applied for online | 15 days |
 
 ## Development

@@ -14,5 +14,5 @@ export async function respondToLeave(leaveId: string, kind: 'acknowledge' | 'not
   if (error) return { error: readableError(error) };
   revalidatePath('/faculty');
   revalidatePath('/faculty/history');
-  return { ok: kind === 'flag' ? 'Concern sent to the approver.' : kind === 'note' ? 'Acknowledged. Your note was emailed to the student.' : 'Acknowledged.' };
+  return { ok: kind === 'flag' ? 'Concern sent to the Dean.' : kind === 'note' ? 'Acknowledged. Your note was emailed to the student.' : 'Acknowledged.' };
 }

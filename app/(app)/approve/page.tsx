@@ -3,22 +3,22 @@ import Link from 'next/link';
 import clsx from 'clsx';
 import { StatusBadge } from '@/components/leave/badges';
 import { Badge, Card, EmptyState, PageHeader, TableWrap } from '@/components/ui/primitives';
-import { fmtRange, fmtStamp, hoursBetween, LEVEL_LABEL, relativeHours, TYPE_LABEL } from '@/lib/format';
+import { fmtRange, fmtStamp, hoursBetween, relativeHours, TYPE_LABEL } from '@/lib/format';
 import { getSettings, requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import type { AckStatus, ApproverLevel, LeaveStatus, LeaveType } from '@/lib/types';
+import type { AckStatus, LeaveStatus, LeaveType } from '@/lib/types';
 
 export const metadata: Metadata = { title: 'Approval queue' };
 
 type Row = {
   id: string; ref: string; type: LeaveType; status: LeaveStatus; from_date: string; to_date: string;
-  submitted_at: string; decided_at: string | null; approver_level: ApproverLevel;
+  submitted_at: string; decided_at: string | null;
   student: { full_name: string; student_no: string | null; batch: string | null; section: string | null } | null;
   faculty_acks: { status: AckStatus }[];
   ack_concerns: { id: number }[];
 };
 
-const SELECT = `id, ref, type, status, from_date, to_date, submitted_at, decided_at, approver_level,
+const SELECT = `id, ref, type, status, from_date, to_date, submitted_at, decided_at,
   student:people!leave_requests_student_id_fkey(full_name, student_no, batch, section),
   faculty_acks(status), ack_concerns(id)`;
 
@@ -26,17 +26,12 @@ export default async function ApproveQueue({ searchParams }: { searchParams: Pro
   const { person } = await requireViewer('approver');
   const { view } = await searchParams;
   const decided = view === 'decided';
-  const level = person.approver_level!;
   const s = await getSettings();
   const supabase = await createClient();
 
-  let query = supabase.from('leave_requests').select(SELECT);
-  if (decided) {
-    query = query.eq('decided_by', person.id).order('decided_at', { ascending: false }).limit(100);
-  } else {
-    query = query.eq('status', 'submitted').order('submitted_at', { ascending: true }).limit(300);
-    if (level === 'chair') query = query.eq('approver_level', 'chair');
-  }
+  const query = decided
+    ? supabase.from('leave_requests').select(SELECT).eq('decided_by', person.id).order('decided_at', { ascending: false }).limit(100)
+    : supabase.from('leave_requests').select(SELECT).eq('status', 'submitted').order('submitted_at', { ascending: true }).limit(300);
   const { data } = await query;
   const rows = (data ?? []) as unknown as Row[];
   const now = new Date();
@@ -52,9 +47,7 @@ export default async function ApproveQueue({ searchParams }: { searchParams: Pro
     <>
       <PageHeader
         title="Approval queue"
-        description={level === 'dean'
-          ? 'Requests routed to the Dean, plus anything still waiting with the Programme Chair. Oldest first.'
-          : 'Requests routed to the Programme Chair. Oldest first. Faculty acknowledgment runs in parallel, so you can decide at any time.'}
+        description="Every leave request waiting for the Dean, oldest first. Faculty acknowledgment runs in parallel, so you can decide at any time."
       />
       <div className="mb-4 flex gap-6 border-b border-line">
         {tab('/approve', 'Waiting', !decided)}
@@ -71,7 +64,6 @@ export default async function ApproveQueue({ searchParams }: { searchParams: Pro
               <thead>
                 <tr>
                   <th>Student</th><th>Leave</th><th>Faculty</th>
-                  {!decided && level === 'dean' && <th>Routed to</th>}
                   <th>{decided ? 'Decided' : 'Waiting'}</th>
                   {decided && <th>Status</th>}
                 </tr>
@@ -91,7 +83,6 @@ export default async function ApproveQueue({ searchParams }: { searchParams: Pro
                         <span className="tabular-nums">{answered} of {r.faculty_acks.length}</span>
                         {r.ack_concerns.length > 0 && <div className="mt-1"><Badge tone="bad">{r.ack_concerns.length} concern{r.ack_concerns.length > 1 ? 's' : ''}</Badge></div>}
                       </td>
-                      {!decided && level === 'dean' && <td className="whitespace-nowrap">{LEVEL_LABEL[r.approver_level]}</td>}
                       <td className="whitespace-nowrap">
                         {decided ? fmtStamp(r.decided_at!) : overdue ? <Badge tone="bad">Overdue · {relativeHours(r.submitted_at, now)}</Badge> : <span className="text-ink-soft">{relativeHours(r.submitted_at, now)}</span>}
                       </td>

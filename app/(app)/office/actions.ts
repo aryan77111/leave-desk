@@ -58,7 +58,7 @@ export async function setPersonActive(personId: string, active: boolean): Promis
   return { ok: active ? 'Reactivated.' : 'Deactivated. They can no longer sign in.' };
 }
 
-const INT_FIELDS = ['notice_hours', 'medical_late_hours', 'medical_ahead_days', 'ack_hours', 'escalate_hours', 'doc_days', 'chair_max_days', 'max_leave_days'] as const;
+const INT_FIELDS = ['notice_hours', 'medical_late_hours', 'medical_ahead_days', 'ack_hours', 'escalate_hours', 'doc_days', 'max_leave_days'] as const;
 
 export async function updateSettings(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
   const { person } = await requireViewer('office');

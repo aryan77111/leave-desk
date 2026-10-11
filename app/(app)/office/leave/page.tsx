@@ -2,17 +2,17 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { StatusBadge } from '@/components/leave/badges';
 import { Card, EmptyState, LinkButton, PageHeader, TableWrap } from '@/components/ui/primitives';
-import { fmtRange, fmtStamp, LEVEL_LABEL, STATUS_LABEL, TYPE_LABEL } from '@/lib/format';
+import { fmtRange, fmtStamp, STATUS_LABEL, TYPE_LABEL } from '@/lib/format';
 import { requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import type { ApproverLevel, LeaveStatus, LeaveType } from '@/lib/types';
+import type { LeaveStatus, LeaveType } from '@/lib/types';
 
 export const metadata: Metadata = { title: 'All leave' };
 
 const PAGE = 50;
 type Row = {
   id: string; ref: string; type: LeaveType; status: LeaveStatus; from_date: string; to_date: string; submitted_at: string;
-  approver_level: ApproverLevel; doc_deadline: string | null;
+  doc_deadline: string | null;
   student: { full_name: string; student_no: string | null; batch: string | null; section: string | null } | null;
   leave_sessions: { session_id: string }[];
 };
@@ -33,7 +33,7 @@ export default async function AllLeave({ searchParams }: {
   let query = supabase
     .from('leave_requests')
     .select(
-      `id, ref, type, status, from_date, to_date, submitted_at, approver_level, doc_deadline,
+      `id, ref, type, status, from_date, to_date, submitted_at, doc_deadline,
        student:people!leave_requests_student_id_fkey${inner ? '!inner' : ''}(full_name, student_no, batch, section),
        leave_sessions(session_id)`,
       { count: 'exact' },
@@ -88,7 +88,7 @@ export default async function AllLeave({ searchParams }: {
         ) : (
           <TableWrap>
             <table className="data-table">
-              <thead><tr><th>Request</th><th>Student</th><th>Leave</th><th>Sessions</th><th>Decided by</th><th>Status</th></tr></thead>
+              <thead><tr><th>Request</th><th>Student</th><th>Leave</th><th>Sessions</th><th>Status</th></tr></thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className="row-link">
@@ -96,7 +96,6 @@ export default async function AllLeave({ searchParams }: {
                     <td>{r.student?.full_name}<div className="text-xs text-ink-muted">{r.student?.student_no} · {r.student?.batch} {r.student?.section}</div></td>
                     <td className="whitespace-nowrap">{fmtRange(r.from_date, r.to_date)}<div className="text-xs text-ink-muted">{TYPE_LABEL[r.type]}</div></td>
                     <td className="tabular-nums">{r.leave_sessions.length}</td>
-                    <td className="whitespace-nowrap">{LEVEL_LABEL[r.approver_level]}</td>
                     <td><StatusBadge status={r.status} />{r.status === 'sanctioned' && r.doc_deadline && <div className="mt-1 text-xs text-ink-muted">Due {fmtStamp(r.doc_deadline)}</div>}</td>
                   </tr>
                 ))}

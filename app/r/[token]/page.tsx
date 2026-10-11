@@ -69,7 +69,7 @@ export default async function TokenPage({ params }: { params: Promise<{ token: s
           {c.reason ? (
             <p className="text-sm text-ink"><span className="text-ink-muted">Reason: </span>{c.reason}</p>
           ) : (
-            <p className="text-sm text-ink-muted">The reason and medical certificate are visible to the approver only.</p>
+            <p className="text-sm text-ink-muted">The reason and medical certificate are visible to the Dean only.</p>
           )}
 
           {c.state === 'open' && (

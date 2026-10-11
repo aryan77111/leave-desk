@@ -23,7 +23,6 @@ export default async function NewLeavePage() {
           medicalLateHours: s.medical_late_hours,
           medicalAheadDays: s.medical_ahead_days,
           docDays: s.doc_days,
-          chairMaxDays: s.chair_max_days,
           maxLeaveDays: s.max_leave_days,
         }}
       />

@@ -115,14 +115,15 @@ export const LEVEL_LABEL: Record<ApproverLevel, string> = { chair: 'Programme Ch
 export const ROLE_LABEL: Record<Role, string> = {
   student: 'Student',
   faculty: 'Faculty',
-  approver: 'Approver',
+  approver: 'Dean',
   office: 'Dean HRM Office',
 };
 
 export type Tone = 'ok' | 'warn' | 'bad' | 'info' | 'quiet';
 
-export function routeLevel(type: LeaveType, from: string, to: string, chairMaxDays: number): ApproverLevel {
-  return type === 'family' || daysInclusive(from, to) > chairMaxDays ? 'dean' : 'chair';
+/** Every request is decided by the Dean. */
+export function routeLevel(): ApproverLevel {
+  return 'dean';
 }
 
 export function homeFor(roles: Role[]) {

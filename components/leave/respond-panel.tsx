@@ -26,7 +26,7 @@ export function RespondPanel({ onRespond, compact = false }: { onRespond: (kind:
       {mode ? (
         <div className="flex flex-col gap-2">
           <label htmlFor={`note-${mode}`} className="text-sm font-semibold text-ink-soft">
-            {mode === 'flag' ? 'Concern for the approver' : 'Note for the student'}
+            {mode === 'flag' ? 'Concern for the Dean' : 'Note for the student'}
           </label>
           <textarea
             id={`note-${mode}`}
@@ -39,11 +39,11 @@ export function RespondPanel({ onRespond, compact = false }: { onRespond: (kind:
             autoFocus
           />
           <p className="text-xs text-ink-muted">
-            {mode === 'flag' ? 'Only the approver and the Dean HRM Office see this.' : 'This is emailed to the student.'}
+            {mode === 'flag' ? 'Only the Dean and the Dean HRM Office see this.' : 'This is emailed to the student.'}
           </p>
           <div className="flex flex-wrap gap-2">
             <Button disabled={pending || !text.trim()} onClick={() => send(mode, text)}>
-              {pending ? 'Sending…' : mode === 'flag' ? 'Send to approver' : 'Acknowledge with note'}
+              {pending ? 'Sending…' : mode === 'flag' ? 'Send to the Dean' : 'Acknowledge with note'}
             </Button>
             <Button variant="ghost" disabled={pending} onClick={() => { setMode(null); setResult(null); }}>Cancel</Button>
           </div>

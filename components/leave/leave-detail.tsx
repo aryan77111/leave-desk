@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { AckBadge, StatusBadge } from '@/components/leave/badges';
 import { Card, KeyValues } from '@/components/ui/primitives';
-import { daysInclusive, fmtDay, fmtRange, fmtStamp, LEVEL_LABEL, plural, TYPE_LABEL } from '@/lib/format';
+import { daysInclusive, fmtDay, fmtRange, fmtStamp, plural, TYPE_LABEL } from '@/lib/format';
 import { nextStep, sessionsByFaculty, type Concern, type LeaveDetailData } from '@/lib/leave';
 import type { LeaveEvent } from '@/lib/types';
 
@@ -23,12 +23,11 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
       : []),
     { label: 'Type', value: TYPE_LABEL[leave.type] },
     { label: 'Dates', value: `${fmtRange(leave.from_date, leave.to_date)} · ${plural(days, 'day')}` },
-    { label: 'Decided by', value: LEVEL_LABEL[leave.approver_level] },
     { label: 'Submitted', value: fmtStamp(leave.submitted_at) },
     { label: 'Away from campus', value: leave.away_from_campus && leave.return_date ? `Yes, back on ${fmtDay(leave.return_date)}` : 'No' },
     ...(leave.away_from_campus ? [{ label: 'Contact during absence', value: `${leave.contact_name} · ${leave.contact_phone}` }] : []),
     { label: 'Reason', value: <span className="whitespace-pre-line">{leave.reason}</span>, wide: true },
-    ...(leave.decision_note ? [{ label: leave.status === 'rejected' ? 'Reason for decision' : 'Note from the approver', value: leave.decision_note, wide: true }] : []),
+    ...(leave.decision_note ? [{ label: leave.status === 'rejected' ? 'Reason for decision' : 'Note from the Dean', value: leave.decision_note, wide: true }] : []),
   ];
 
   return (
@@ -73,7 +72,7 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
                       ))}
                     </ul>
                     {g.note && <p className="mt-2 rounded border-l-2 border-gold-500 bg-gold-100/60 px-3 py-2 text-sm text-ink">{g.note}</p>}
-                    {!isStaff && g.status === 'flagged' && <p className="mt-2 text-xs text-ink-muted">This faculty member shared a point with the approver.</p>}
+                    {!isStaff && g.status === 'flagged' && <p className="mt-2 text-xs text-ink-muted">This faculty member shared a point with the Dean.</p>}
                   </div>
                   <div className="flex flex-col items-start gap-1 sm:items-end">
                     <AckBadge status={g.status} />

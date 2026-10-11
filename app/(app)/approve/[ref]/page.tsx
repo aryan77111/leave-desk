@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { LeaveDetail } from '@/components/leave/leave-detail';
 import { Card, PageHeader } from '@/components/ui/primitives';
-import { daysInclusive, LEVEL_LABEL, plural, TYPE_LABEL } from '@/lib/format';
+import { daysInclusive, plural, TYPE_LABEL } from '@/lib/format';
 import { getConcerns, getEvents, getLeaveByRef } from '@/lib/leave';
 import { getSettings, requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: { params: Promise<{ ref: stri
 
 export default async function ApproveDetail({ params }: { params: Promise<{ ref: string }> }) {
   const { ref } = await params;
-  const { person } = await requireViewer('approver');
+  await requireViewer('approver');
   const supabase = await createClient();
   const leave = await getLeaveByRef(supabase, ref);
   if (!leave) notFound();
@@ -30,17 +30,11 @@ export default async function ApproveDetail({ params }: { params: Promise<{ ref:
   ]);
   const past = (history.data ?? []) as { from_date: string; to_date: string }[];
   const pastDays = past.reduce((n, p) => n + daysInclusive(p.from_date, p.to_date), 0);
-  const canDecide = leave.status === 'submitted' && (leave.approver_level === person.approver_level || person.approver_level === 'dean');
+  const canDecide = leave.status === 'submitted';
 
   const aside = (
     <>
-      {canDecide ? (
-        <DecisionForm leaveId={leave.id} leaveRef={leave.ref} medical={leave.type === 'medical'} docDays={s.doc_days} />
-      ) : leave.status === 'submitted' ? (
-        <Card title={`Routed to the ${LEVEL_LABEL[leave.approver_level]}`}>
-          <p className="px-5 py-4 text-sm text-ink-soft">This request is decided by the {LEVEL_LABEL[leave.approver_level]}.</p>
-        </Card>
-      ) : null}
+      {canDecide && <DecisionForm leaveId={leave.id} leaveRef={leave.ref} medical={leave.type === 'medical'} docDays={s.doc_days} />}
       <Card title="Leave in the last 6 months">
         <p className="px-5 py-4 text-sm text-ink-soft">
           {past.length === 0

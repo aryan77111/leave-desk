@@ -11,13 +11,12 @@ type Kind = 'people' | 'sessions';
 const TEMPLATES: Record<Kind, { file: string; header: string[]; sample: string[][] }> = {
   people: {
     file: 'leave-desk-people-template.csv',
-    header: ['email', 'full_name', 'roles', 'student_no', 'programme', 'batch', 'section', 'approver_level'],
+    header: ['email', 'full_name', 'roles', 'student_no', 'programme', 'batch', 'section'],
     sample: [
-      ['student.name@college.edu', 'Student Name', 'student', 'UH25001', 'MBA-HRM', '2025-27', 'A', ''],
-      ['faculty.name@college.edu', 'Dr. Faculty Name', 'faculty', '', '', '', '', ''],
-      ['chair@college.edu', 'Dr. Programme Chair', 'faculty;approver', '', '', '', '', 'chair'],
-      ['dean@college.edu', 'Dean Name', 'approver', '', '', '', '', 'dean'],
-      ['deanhrm.office@college.edu', 'Dean HRM Office Staff', 'office', '', '', '', '', ''],
+      ['student.name@college.edu', 'Student Name', 'student', 'UH25001', 'MBA-HRM', '2025-27', 'A'],
+      ['faculty.name@college.edu', 'Dr. Faculty Name', 'faculty', '', '', '', ''],
+      ['dean@college.edu', 'Dean Name', 'dean', '', '', '', ''],
+      ['deanhrm.office@college.edu', 'Dean HRM Office Staff', 'office', '', '', '', ''],
     ],
   },
   sessions: {

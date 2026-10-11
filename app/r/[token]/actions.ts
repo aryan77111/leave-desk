@@ -11,7 +11,7 @@ export async function respondByToken(token: string, kind: 'acknowledge' | 'note'
   if (error) return { error: readableError(error) };
   return {
     ok: kind === 'flag'
-      ? 'Thank you. Your concern has been sent to the approver.'
+      ? 'Thank you. Your concern has been sent to the Dean.'
       : kind === 'note'
         ? 'Thank you. Your note has been emailed to the student.'
         : 'Thank you. Your acknowledgment is recorded.',

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Badge, Card, EmptyState, LinkButton, PageHeader, TableWrap } from '@/components/ui/primitives';
-import { LEVEL_LABEL, ROLE_LABEL } from '@/lib/format';
+import { ROLE_LABEL } from '@/lib/format';
 import { requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import type { Person, Role } from '@/lib/types';
@@ -34,7 +34,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
     <>
       <PageHeader title="People" description="The roster. Only people listed here can sign in. Import from a spreadsheet to add or update people; matching is by email." />
 
-      <Card className="mb-6" title="Import people" description="Roles: student, faculty, approver, office (combine with a semicolon). Approvers need approver_level chair or dean. Students need student_no, batch and section.">
+      <Card className="mb-6" title="Import people" description="Roles: student, faculty, dean, office (combine with a semicolon, for example faculty;dean). Students need student_no, batch and section.">
         <div className="px-5 py-4"><PeopleImport /></div>
       </Card>
 
@@ -72,7 +72,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
                     </td>
                     <td>
                       <div className="flex flex-wrap gap-1">
-                        {p.roles.map((r) => <Badge key={r} tone={r === 'student' ? 'quiet' : 'info'}>{r === 'approver' && p.approver_level ? LEVEL_LABEL[p.approver_level] : ROLE_LABEL[r]}</Badge>)}
+                        {p.roles.map((r) => <Badge key={r} tone={r === 'student' ? 'quiet' : 'info'}>{ROLE_LABEL[r]}</Badge>)}
                       </div>
                     </td>
                     <td className="whitespace-nowrap text-ink-soft">{p.student_no ? `${p.student_no} · ${p.batch} ${p.section}` : '—'}</td>

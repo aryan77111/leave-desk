@@ -35,7 +35,7 @@ grant usage on schema storage to anon, authenticated;
 grant select, insert on storage.objects to authenticated;
 `;
 await db.exec(stub);
-for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql']) {
+for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql']) {
   try { await db.exec(readFileSync(new URL(f, MIG), 'utf8')); console.log('applied', f); }
   catch (e) { console.error('FAILED applying', f, '\n', e.message); process.exit(1); }
 }
@@ -73,7 +73,7 @@ ok(claimed.email === 'office@college.edu' && claimed.user_id === U.office.id, 'o
 
 const imp = await as(U.office, () => one(`select public.import_people($1::jsonb) as r`, [JSON.stringify([
   { email: 'Chair@College.edu', full_name: 'Dr. Programme Chair', roles: 'faculty;approver', approver_level: 'chair' },
-  { email: 'dean@college.edu', full_name: 'Dean', roles: 'approver', approver_level: 'dean' },
+  { email: 'dean@college.edu', full_name: 'Dean', roles: 'dean' },
   { email: 'meera@college.edu', full_name: 'Dr. Meera Mohanty', roles: 'faculty' },
   { email: 'sanjay@college.edu', full_name: 'Prof. Sanjay Rath', roles: 'faculty' },
   { email: 'aryan@stu.college.edu', full_name: 'Aryan Singh', roles: 'student', student_no: 'UH25076', programme: 'MBA-HRM', batch: '2025-27', section: 'A' },
@@ -124,7 +124,7 @@ await throwsLike(() => as(U.aryan, () => db.query(`select public.submit_leave('o
 const med = await as(U.aryan, () => one(`select public.submit_leave('medical', 'Viral fever; advised rest', $1::date, $1::date, $2::uuid[], false, null, null, null, true) as ref`, [today, todayIds]));
 ok(/^LV-\d+$/.test(med.ref), `medical leave submitted as ${med.ref}`);
 const medRow = await one(`select * from leave_requests where ref = $1`, [med.ref]);
-ok(medRow.approver_level === 'chair', 'one-day medical leave routed to the Programme Chair');
+ok(medRow.approver_level === 'dean', 'medical leave goes to the Dean');
 await throwsLike(() => as(U.aryan, () => db.query(`select public.submit_leave('medical', 'Again', $1::date, $1::date, '{}', false, null, null, null, true)`, [today])), /already have leave/, 'overlapping leave refused');
 
 const fam = await as(U.priya, () => one(`select public.submit_leave('family', 'Sister''s wedding in Kochi', $1::date, $2::date, (select array_agg(id) from class_sessions where public.local_date(starts_at) between $1::date and $2::date), true, $3::date, 'K. Nair (father)', '9447000000') as ref`, [day(5), day(6), day(7)]));
@@ -135,7 +135,7 @@ const acks = (await db.query(`select a.*, p.email from faculty_acks a join peopl
 ok(acks.length === 2 && acks.every(a => a.status === 'pending' && a.token_hash), 'one pending acknowledgment per faculty, each with a token');
 const mail = (await db.query(`select * from email_outbox where leave_id = $1 order by id`, [medRow.id])).rows;
 ok(mail.filter(m => m.kind === 'faculty_notice').length === 2, 'two faculty notices queued');
-ok(mail.some(m => m.kind === 'approver_new' && m.to_email === 'chair@college.edu'), 'chair emailed');
+ok(mail.some(m => m.kind === 'approver_new' && m.to_email === 'dean@college.edu') && mail.some(m => m.kind === 'approver_new' && m.to_email === 'chair@college.edu'), 'every account with Dean access emailed');
 ok(mail.some(m => m.kind === 'student_receipt'), 'student receipt queued');
 ok(mail.filter(m => m.kind === 'faculty_notice').every(m => !m.body.includes('Viral fever')), 'faculty email hides the medical reason');
 
@@ -187,8 +187,9 @@ await throwsLike(() => as(U.aryan, () => db.query(`select public.respond_to_leav
 
 // Decisions --------------------------------------------------------------------
 console.log('\nDecisions');
-await throwsLike(() => as(U.chair, () => db.query(`select public.decide_leave($1, true)`, [famRow.id])), /routed to the Dean/, 'chair cannot decide a Dean-level request');
-await throwsLike(() => as(U.meera, () => db.query(`select public.decide_leave($1, true)`, [medRow.id])), /Only approvers/, 'faculty cannot decide');
+ok((await db.query(`select approver_level from people where 'approver' = any (roles)`)).rows.every(r => r.approver_level === 'dean'), 'imported approvers (including role "dean" and a former chair) all have Dean access');
+ok((await one(`select public.route_level('official', current_date, current_date + 10) as l`)).l === 'dean', 'long official leave also goes to the Dean');
+await throwsLike(() => as(U.meera, () => db.query(`select public.decide_leave($1, true)`, [medRow.id])), /Only the Dean can decide/, 'faculty cannot decide');
 await throwsLike(() => as(U.chair, () => db.query(`select public.decide_leave($1, false, '  ')`, [medRow.id])), /explaining the rejection/, 'rejection needs a note');
 const d1 = await as(U.chair, () => one(`select public.decide_leave($1, true) as s`, [medRow.id]));
 ok(d1.s === 'sanctioned', 'medical leave sanctioned provisionally');

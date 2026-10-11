@@ -42,7 +42,7 @@ export async function withdrawLeave(leaveId: string, ref: string): Promise<Actio
   if (error) return { error: readableError(error) };
   revalidatePath(`/student/leave/${ref}`);
   revalidatePath('/student');
-  return { ok: 'Request withdrawn. Your faculty and the approver have been told.' };
+  return { ok: 'Request withdrawn. Your faculty and the Dean have been told.' };
 }
 
 export async function attachCertificate(leaveId: string, path: string, ref: string): Promise<ActionResult> {

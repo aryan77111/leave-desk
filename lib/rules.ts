@@ -7,7 +7,6 @@ export type Rules = {
   medicalLateHours: number;
   medicalAheadDays: number;
   docDays: number;
-  chairMaxDays: number;
   maxLeaveDays: number;
 };
 

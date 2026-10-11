@@ -20,11 +20,8 @@ test('day arithmetic', () => {
   assert.equal(daysInclusive('2026-10-12', '2026-10-15'), 4);
 });
 
-test('routing matches the database rule', () => {
-  assert.equal(routeLevel('medical', '2026-10-12', '2026-10-14', 3), 'chair');
-  assert.equal(routeLevel('medical', '2026-10-12', '2026-10-15', 3), 'dean');
-  assert.equal(routeLevel('family', '2026-10-12', '2026-10-12', 3), 'dean');
-  assert.equal(routeLevel('official', '2026-10-12', '2026-10-12', 3), 'chair');
+test('every request goes to the Dean', () => {
+  assert.equal(routeLevel(), 'dean');
 });
 
 test('landing page by role', () => {

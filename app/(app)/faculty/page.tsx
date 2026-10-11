@@ -26,7 +26,7 @@ export default async function FacultyHome() {
     <>
       <PageHeader
         title="Leave notices"
-        description="Students who will miss your sessions. Acknowledge, add a note for the student, or raise a concern with the approver. Make-up of any evaluation stays at your discretion."
+        description="Students who will miss your sessions. Acknowledge, add a note for the student, or raise a concern with the Dean. Make-up of any evaluation stays at your discretion."
       />
 
       <div className="flex flex-col gap-4">

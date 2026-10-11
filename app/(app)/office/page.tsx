@@ -38,7 +38,7 @@ export default async function OfficeHome() {
   const setup = [
     { done: Boolean(s.app_url && s.email_from), label: 'Set the app address and email sender', href: '/office/settings' },
     { done: n(students) > 0 && n(faculty) > 0, label: 'Import students and faculty', href: '/office/people' },
-    { done: n(approvers) > 0, label: 'Add the Programme Chair and Dean as approvers', href: '/office/people' },
+    { done: n(approvers) > 0, label: 'Add the Dean (role: dean)', href: '/office/people' },
     { done: n(sessions) > 0, label: 'Import the timetable', href: '/office/timetable' },
   ];
   const setupDone = setup.every((x) => x.done);
@@ -112,7 +112,7 @@ export default async function OfficeHome() {
       </div>
 
       <p className="mt-6 text-xs text-ink-muted">
-        Roster: {n(students)} students, {n(faculty)} faculty, {n(approvers)} approvers. {n(sessions)} upcoming timetable sessions.
+        Roster: {n(students)} students, {n(faculty)} faculty, {n(approvers)} with Dean access. {n(sessions)} upcoming timetable sessions.
       </p>
     </>
   );

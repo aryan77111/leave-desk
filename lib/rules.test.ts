@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { earliestPlannedStart, timingProblems, type Rules } from './rules.ts';
 
-const rules: Rules = { noticeHours: 48, medicalLateHours: 24, medicalAheadDays: 7, docDays: 2, chairMaxDays: 3, maxLeaveDays: 15 };
+const rules: Rules = { noticeHours: 48, medicalLateHours: 24, medicalAheadDays: 7, docDays: 2, maxLeaveDays: 15 };
 // Mon 12 Oct 2026, 10:00 in Bhubaneswar
 const now = new Date('2026-10-12T10:00:00+05:30');
 
