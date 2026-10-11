@@ -24,7 +24,7 @@ $$;
 revoke execute on function public.cron_secret_ok(text) from public, anon, authenticated;
 grant execute on function public.cron_secret_ok(text) to service_role;
 
--- First programme-office account. Run once from the SQL editor:
+-- First Dean HRM Office account. Run once from the SQL editor:
 --   select public.bootstrap_office('you@college.edu', 'Your Name');
 create or replace function public.bootstrap_office(p_email text, p_name text) returns uuid
 language plpgsql security definer set search_path = public as $$

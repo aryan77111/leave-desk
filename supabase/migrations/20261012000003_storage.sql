@@ -1,6 +1,6 @@
 -- Leave Desk: private bucket for medical certificates.
 -- Students upload to <their auth user id>/<leave id>/<file>. Only the student,
--- approvers and the programme office can read a certificate. Faculty cannot.
+-- approvers and the Dean HRM Office can read a certificate. Faculty cannot.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('certificates', 'certificates', false, 5242880, array['application/pdf', 'image/jpeg', 'image/png'])

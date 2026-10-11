@@ -17,7 +17,7 @@ const TEMPLATES: Record<Kind, { file: string; header: string[]; sample: string[]
       ['faculty.name@college.edu', 'Dr. Faculty Name', 'faculty', '', '', '', '', ''],
       ['chair@college.edu', 'Dr. Programme Chair', 'faculty;approver', '', '', '', '', 'chair'],
       ['dean@college.edu', 'Dean Name', 'approver', '', '', '', '', 'dean'],
-      ['office@college.edu', 'Office Staff', 'office', '', '', '', '', ''],
+      ['deanhrm.office@college.edu', 'Dean HRM Office Staff', 'office', '', '', '', '', ''],
     ],
   },
   sessions: {

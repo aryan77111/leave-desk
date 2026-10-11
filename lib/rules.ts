@@ -22,11 +22,11 @@ export function timingProblems(type: LeaveType, from: string, to: string, rules:
   if (!from || !to) return out;
   if (to < from) return ['The last day is before the first day.'];
   if (daysInclusive(from, to) > rules.maxLeaveDays) {
-    out.push(`Leave longer than ${rules.maxLeaveDays} days is handled by the programme office directly.`);
+    out.push(`Leave longer than ${rules.maxLeaveDays} days is handled by the Dean HRM Office directly.`);
   }
   if (type === 'medical') {
     const late = dayStart(addDays(from, 1)).getTime() + rules.medicalLateHours * 36e5;
-    if (now.getTime() > late) out.push(`Medical leave must be applied within ${rules.medicalLateHours} hours of the first day of absence. Contact the programme office.`);
+    if (now.getTime() > late) out.push(`Medical leave must be applied within ${rules.medicalLateHours} hours of the first day of absence. Contact the Dean HRM Office.`);
     if (from > addDays(todayLocal(now), rules.medicalAheadDays)) out.push(`Medical leave can be applied at most ${rules.medicalAheadDays} days ahead.`);
   } else if (dayStart(from).getTime() - now.getTime() < rules.noticeHours * 36e5) {
     out.push(`This leave needs ${rules.noticeHours} hours' notice. The earliest first day you can choose is ${fmtDay(earliestPlannedStart(now, rules.noticeHours))}.`);

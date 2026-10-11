@@ -44,7 +44,7 @@ begin
     raise exception 'The last day is before the first day.' using errcode = '22023';
   end if;
   if p_to - p_from + 1 > s.max_leave_days then
-    raise exception 'Leave longer than % days is handled by the programme office directly.', s.max_leave_days using errcode = '22023';
+    raise exception 'Leave longer than % days is handled by the Dean HRM Office directly.', s.max_leave_days using errcode = '22023';
   end if;
   if p_reason is null or length(btrim(p_reason)) < 3 then
     raise exception 'Add a short reason.' using errcode = '22023';
@@ -55,7 +55,7 @@ begin
 
   if p_type = 'medical' then
     if now() > public.day_start(p_from + 1) + make_interval(hours => s.medical_late_hours) then
-      raise exception 'Medical leave must be applied within % hours of the first day of absence. Contact the programme office.', s.medical_late_hours using errcode = '22023';
+      raise exception 'Medical leave must be applied within % hours of the first day of absence. Contact the Dean HRM Office.', s.medical_late_hours using errcode = '22023';
     end if;
     if p_from > v_today + s.medical_ahead_days then
       raise exception 'Medical leave can be applied at most % days ahead.', s.medical_ahead_days using errcode = '22023';
@@ -452,7 +452,7 @@ begin
     raise exception 'A certificate can be added only after the leave is sanctioned.' using errcode = '22023';
   end if;
   if now() > r.doc_deadline then
-    raise exception 'The deadline for this certificate has passed. Contact the programme office.' using errcode = '22023';
+    raise exception 'The deadline for this certificate has passed. Contact the Dean HRM Office.' using errcode = '22023';
   end if;
   if p_path is null or p_path not like (auth.uid()::text || '/' || p_leave::text || '/%') then
     raise exception 'The uploaded file does not belong to this request.' using errcode = '22023';
@@ -484,7 +484,7 @@ declare
   n int;
 begin
   if not public.has_role('office') then
-    raise exception 'Only the programme office can check certificates.' using errcode = '42501';
+    raise exception 'Only the Dean HRM Office can check certificates.' using errcode = '42501';
   end if;
   select * into r from public.leave_requests where id = p_leave for update;
   if not found then raise exception 'Leave request not found.' using errcode = 'P0002'; end if;
@@ -509,9 +509,9 @@ begin
            doc_deadline = greatest(doc_deadline, now() + interval '48 hours')
      where id = p_leave
      returning * into r;
-    perform public.log_event(p_leave, v_me, 'certificate_returned', 'Certificate returned by the programme office: ' || v_note);
+    perform public.log_event(p_leave, v_me, 'certificate_returned', 'Certificate returned by the Dean HRM Office: ' || v_note);
     perform public.queue_email(stu.email, stu.full_name, format('Please upload a new certificate for %s', r.ref),
-      format(E'The programme office could not accept your certificate.\n\n%s\n\nUpload a new one by %s.', v_note, public.fmt_time(r.doc_deadline)),
+      format(E'The Dean HRM Office could not accept your certificate.\n\n%s\n\nUpload a new one by %s.', v_note, public.fmt_time(r.doc_deadline)),
       p_leave, 'student_certificate', '/student/leave/' || r.ref, 'Upload certificate');
   end if;
 end $$;
@@ -554,7 +554,7 @@ begin
      for update of lr
   loop
     update public.leave_requests set escalated_at = now() where id = r.id;
-    perform public.log_event(r.id, null, 'escalated', format('No decision in %s hours: reminder sent to the approver and the programme office', s.escalate_hours), false);
+    perform public.log_event(r.id, null, 'escalated', format('No decision in %s hours: reminder sent to the approver and the Dean HRM Office', s.escalate_hours), false);
     for x in
       select email, full_name from public.people where active and (('approver' = any (roles) and approver_level = r.approver_level) or 'office' = any (roles))
     loop
@@ -590,7 +590,7 @@ begin
     update public.leave_requests set status = 'cancelled', closed_at = now() where id = r.id;
     perform public.log_event(r.id, null, 'cancelled', 'Cancelled automatically: certificate not uploaded by the deadline');
     perform public.queue_email(r.student_email, r.student_name, format('Leave %s cancelled', r.ref),
-      format(E'Your medical certificate was not uploaded by %s, so the leave for %s is cancelled. The absence counts as unapproved.\nContact the programme office if this is wrong.',
+      format(E'Your medical certificate was not uploaded by %s, so the leave for %s is cancelled. The absence counts as unapproved.\nContact the Dean HRM Office if this is wrong.',
              public.fmt_time(r.doc_deadline), public.fmt_range(r.from_date, r.to_date)),
       r.id, 'student_cancelled', '/student/leave/' || r.ref, 'View your leave');
     for x in select email, full_name from public.people where active and 'office' = any (roles) loop
@@ -620,7 +620,7 @@ declare
   v_existed boolean;
 begin
   if not public.has_role('office') then
-    raise exception 'Only the programme office can import people.' using errcode = '42501';
+    raise exception 'Only the Dean HRM Office can import people.' using errcode = '42501';
   end if;
   if jsonb_typeof(p_rows) <> 'array' then
     raise exception 'Expected a list of rows.' using errcode = '22023';
@@ -667,7 +667,7 @@ create or replace function public.set_person_active(p_person uuid, p_active bool
 language plpgsql security definer set search_path = public as $$
 begin
   if not public.has_role('office') then
-    raise exception 'Only the programme office can change people.' using errcode = '42501';
+    raise exception 'Only the Dean HRM Office can change people.' using errcode = '42501';
   end if;
   if p_person = public.me() and not p_active then
     raise exception 'You cannot deactivate your own account.' using errcode = '22023';
@@ -690,7 +690,7 @@ declare
   v_new boolean;
 begin
   if not public.has_role('office') then
-    raise exception 'Only the programme office can import the timetable.' using errcode = '42501';
+    raise exception 'Only the Dean HRM Office can import the timetable.' using errcode = '42501';
   end if;
   if jsonb_typeof(p_rows) <> 'array' then
     raise exception 'Expected a list of rows.' using errcode = '22023';
@@ -737,7 +737,7 @@ create or replace function public.attendance_export(p_from date, p_to date) retu
 language plpgsql stable security definer set search_path = public as $$
 begin
   if not public.has_role('office') then
-    raise exception 'Only the programme office can export attendance.' using errcode = '42501';
+    raise exception 'Only the Dean HRM Office can export attendance.' using errcode = '42501';
   end if;
   return query
   select r.ref, stu.student_no, stu.full_name, cs.batch, cs.section, cs.course_code,

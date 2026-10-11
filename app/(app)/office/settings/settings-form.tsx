@@ -10,10 +10,10 @@ const RULES: { key: keyof Settings; label: string; hint: string; unit: string }[
   { key: 'medical_late_hours', label: 'Time to apply for medical leave', hint: 'Counted from the end of the first day of absence.', unit: 'hours' },
   { key: 'medical_ahead_days', label: 'How far ahead medical leave can be applied', hint: 'For a planned procedure or doctor-advised rest.', unit: 'days' },
   { key: 'ack_hours', label: 'Faculty response window', hint: 'No reply after this is recorded as acknowledged.', unit: 'hours' },
-  { key: 'escalate_hours', label: 'Reminder to the approver after', hint: 'The approver and the programme office are emailed.', unit: 'hours' },
+  { key: 'escalate_hours', label: 'Reminder to the approver after', hint: 'The approver and the Dean HRM Office are emailed.', unit: 'hours' },
   { key: 'doc_days', label: 'Medical certificate deadline', hint: 'Days after resuming classes. Missing it cancels the leave.', unit: 'days' },
   { key: 'chair_max_days', label: 'Longest leave the Programme Chair decides', hint: 'Longer leave, and all family-reason leave, goes to the Dean.', unit: 'days' },
-  { key: 'max_leave_days', label: 'Longest leave students can apply for here', hint: 'Longer leave is handled by the office directly.', unit: 'days' },
+  { key: 'max_leave_days', label: 'Longest leave students can apply for here', hint: 'Longer leave is handled by the Dean HRM Office directly.', unit: 'days' },
 ];
 
 export function SettingsForm({ settings }: { settings: Settings }) {

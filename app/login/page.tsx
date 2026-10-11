@@ -29,7 +29,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <GoogleButton next={next} />
         </div>
         <p className="mt-6 border-t border-line pt-4 text-xs text-ink-muted">
-          Only people on the programme roster can use Leave Desk. If you are a student or faculty member and cannot get in, ask the programme office to add you.
+          Only people on the programme roster can use Leave Desk. If you are a student or faculty member and cannot get in, ask the Dean HRM Office to add you.
         </p>
       </div>
     </AuthFrame>

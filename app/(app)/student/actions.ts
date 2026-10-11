@@ -53,5 +53,5 @@ export async function attachCertificate(leaveId: string, path: string, ref: stri
   if (error) return { error: readableError(error) };
   revalidatePath(`/student/leave/${ref}`);
   revalidatePath('/student');
-  return { ok: 'Certificate uploaded. The programme office will check it.' };
+  return { ok: 'Certificate uploaded. The Dean HRM Office will check it.' };
 }

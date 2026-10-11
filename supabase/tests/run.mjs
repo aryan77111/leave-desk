@@ -35,7 +35,7 @@ grant usage on schema storage to anon, authenticated;
 grant select, insert on storage.objects to authenticated;
 `;
 await db.exec(stub);
-for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql']) {
+for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql']) {
   try { await db.exec(readFileSync(new URL(f, MIG), 'utf8')); console.log('applied', f); }
   catch (e) { console.error('FAILED applying', f, '\n', e.message); process.exit(1); }
 }
@@ -83,7 +83,7 @@ const imp = await as(U.office, () => one(`select public.import_people($1::jsonb)
 ])]));
 ok(imp.r.inserted === 6 && imp.r.errors.length === 2, `people import: 6 inserted, 2 rejected rows reported (${JSON.stringify(imp.r.errors.map(e => e.row))})`);
 ok((await one(`select user_id from people where email = 'aryan@stu.college.edu'`)).user_id === U.aryan.id, 'existing sign-in linked during import');
-await throwsLike(() => as(U.aryan, () => db.query(`select public.import_people('[]'::jsonb)`)), /Only the programme office/, 'students cannot import people');
+await throwsLike(() => as(U.aryan, () => db.query(`select public.import_people('[]'::jsonb)`)), /Only the Dean HRM Office/, 'students cannot import people');
 
 const stranger = await as(U.stranger, () => one(`select (public.claim_profile()).id`));
 ok(stranger.id === null, 'a Google account not on the roster gets no profile');
@@ -218,7 +218,7 @@ ok((await one(`select status from leave_requests where id = $1`, [medRow.id])).s
 
 const exp = await as(U.office, () => db.query(`select * from public.attendance_export($1::date, $2::date)`, [day(-1), day(10)]));
 ok(exp.rows.length === 2 + 4, `attendance export lists ${exp.rows.length} sessions`);
-await throwsLike(() => as(U.aryan, () => db.query(`select * from public.attendance_export(current_date, current_date)`)), /Only the programme office/, 'students cannot export');
+await throwsLike(() => as(U.aryan, () => db.query(`select * from public.attendance_export(current_date, current_date)`)), /Only the Dean HRM Office/, 'students cannot export');
 
 // Withdraw ----------------------------------------------------------------------
 console.log('\nWithdraw');

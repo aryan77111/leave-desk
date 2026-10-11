@@ -44,7 +44,7 @@ export function nextStep(l: Pick<LeaveRequest, 'status' | 'approver_level' | 'do
         ? `Sanctioned provisionally. Upload your medical certificate by ${l.doc_deadline ? fmtStamp(l.doc_deadline) : 'the deadline'}, or the leave is cancelled automatically.`
         : `Sanctioned provisionally. Certificate due by ${l.doc_deadline ? fmtStamp(l.doc_deadline) : 'the deadline'}.`;
     case 'documents_in':
-      return audience === 'student' ? 'Your certificate is with the programme office for checking.' : 'Certificate uploaded and waiting for the programme office to check it.';
+      return audience === 'student' ? 'Your certificate is with the Dean HRM Office for checking.' : 'Certificate uploaded and waiting for the Dean HRM Office to check it.';
     case 'approved':
       return 'Final. The sessions count as approved leave in attendance.';
     case 'rejected':

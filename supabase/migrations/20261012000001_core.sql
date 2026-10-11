@@ -37,7 +37,7 @@ create table public.settings (
 insert into public.settings (id) values (1);
 
 -- ---------------------------------------------------------------------------
--- People: the roster the programme office imports. Only people on the roster
+-- People: the roster the Dean HRM Office imports. Only people on the roster
 -- can use the app; a Google sign-in is linked to a roster row by email.
 -- ---------------------------------------------------------------------------
 create table public.people (

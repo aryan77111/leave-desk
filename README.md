@@ -5,7 +5,7 @@ Digital student leave approvals for the MBA-HRM programme. It replaces the paper
 - **Students** apply online. Missed sessions are filled in from the timetable, and medical certificates are uploaded online.
 - **Faculty** acknowledge with one tap from the email (no sign-in), add a note for the student, or raise a concern with the approver.
 - **Approvers** (Programme Chair, Dean) decide from one queue that shows faculty notes and concerns.
-- **The programme office** manages the roster and timetable, checks certificates, exports attendance and sets the rules.
+- **The Dean HRM Office** manages the roster and timetable, checks certificates, exports attendance and sets the rules.
 
 Automatic jobs handle deemed acknowledgment, approver reminders, certificate reminders and auto-cancellation.
 
@@ -25,7 +25,7 @@ All workflow rules live in the database (`supabase/migrations`). The app calls f
 
 - Students see only their own requests.
 - Faculty see only notices for their own sessions, and never medical reasons or certificates.
-- Concerns raised by faculty are visible only to approvers and the office.
+- Concerns raised by faculty are visible only to approvers and the Dean HRM Office.
 
 ## Already done
 
@@ -53,13 +53,13 @@ All workflow rules live in the database (`supabase/migrations`). The app calls f
    - Set **Site URL** to that address.
    - Add `https://<your-address>/auth/callback` to **Redirect URLs**.
 
-### 3. Create the first programme-office account
+### 3. Create the first Dean HRM Office account
 1. Sign in to the app once with your Google account. You will see "not on the roster", which is expected.
 2. In the Supabase SQL editor, run:
    ```sql
    select public.bootstrap_office('you@college.edu', 'Your Name');
    ```
-3. Reload the app. You now see the programme-office menu.
+3. Reload the app. You now see the Dean HRM Office menu.
 
 ### 4. Turn on email (Resend)
 1. Create a Resend account and verify the college domain (or a domain you control). Then create an API key.
@@ -77,7 +77,7 @@ Emails wait in the outbox until both are set; nothing is lost. Without a verifie
   - Students need `student_no`, `batch` and `section`.
 - **Timetable → Import timetable**: one row per session. Faculty must already be on the roster. Re-importing updates sessions instead of duplicating them.
 
-The office Overview shows a checklist until these steps are done.
+The Dean HRM Office overview shows a checklist until these steps are done.
 
 ## Rules (changeable in Rules and settings)
 

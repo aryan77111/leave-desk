@@ -96,7 +96,7 @@ export async function updateSettings(_prev: ActionResult | null, form: FormData)
   const supabase = await createClient();
   const { error, count } = await supabase.from('settings').update(patch, { count: 'exact' }).eq('id', 1);
   if (error) return { error: readableError(error) };
-  if (count === 0) return { error: 'Only the programme office can change the rules.' };
+  if (count === 0) return { error: 'Only the Dean HRM Office can change the rules.' };
   revalidatePath('/', 'layout');
   return { ok: 'Saved. New rules apply to requests from now on.' };
 }

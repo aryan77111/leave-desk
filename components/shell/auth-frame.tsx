@@ -14,7 +14,7 @@ export function AuthFrame({ children, wide = false }: { children: ReactNode; wid
         <div className={wide ? 'w-full max-w-2xl' : 'w-full max-w-md'}>{children}</div>
       </main>
       <footer className="px-4 pb-6 text-center text-xs text-ink-faint">
-        Leave Desk for the MBA-HRM programme. For help, contact the programme office.
+        Leave Desk for the MBA-HRM programme. For help, contact the Dean HRM Office.
       </footer>
     </div>
   );

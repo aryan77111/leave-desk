@@ -33,7 +33,7 @@ export default async function StudentLeavePage({ params, searchParams }: {
     aside = (
       <Card title="Certificate received">
         <p className="px-5 py-4 text-sm text-ink-soft">
-          Uploaded {leave.doc_uploaded_at ? fmtStamp(leave.doc_uploaded_at) : ''}. The programme office will check it and you will get an email.
+          Uploaded {leave.doc_uploaded_at ? fmtStamp(leave.doc_uploaded_at) : ''}. The Dean HRM Office will check it and you will get an email.
         </p>
       </Card>
     );

@@ -116,7 +116,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   student: 'Student',
   faculty: 'Faculty',
   approver: 'Approver',
-  office: 'Programme office',
+  office: 'Dean HRM Office',
 };
 
 export type Tone = 'ok' | 'warn' | 'bad' | 'info' | 'quiet';

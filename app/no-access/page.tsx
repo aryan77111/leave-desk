@@ -17,7 +17,7 @@ export default async function NoAccess() {
           You signed in as <span className="font-semibold text-ink">{s.email}</span>, but this address is not on the programme roster.
         </p>
         <p className="mt-3 text-sm text-ink-muted">
-          If you used a personal Google account, sign out and sign in again with your college account. Otherwise, ask the programme office to add this address.
+          If you used a personal Google account, sign out and sign in again with your college account. Otherwise, ask the Dean HRM Office to add this address.
         </p>
         <form action="/auth/signout" method="post" className="mt-6">
           <button className="inline-flex h-9 items-center rounded border border-line-strong bg-white px-3.5 text-sm font-semibold text-ink hover:bg-canvas">

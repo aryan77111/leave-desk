@@ -110,7 +110,7 @@ export function NewLeaveForm({ batch, section, rules }: { batch: string; section
               label="Reason"
               htmlFor="reason"
               hint={type === 'medical'
-                ? 'Faculty see only that this is medical leave. The reason is visible to the approver and the programme office.'
+                ? 'Faculty see only that this is medical leave. The reason is visible to the approver and the Dean HRM Office.'
                 : 'Faculty see this reason in their notice.'}
             >
               <textarea id="reason" name="reason" required minLength={3} maxLength={1000} rows={3} className="field-input"
@@ -195,7 +195,7 @@ export function NewLeaveForm({ batch, section, rules }: { batch: string; section
             {type === 'medical' && (
               <label className="flex items-start gap-3 text-xs text-ink-soft">
                 <input type="checkbox" name="consent" required className="mt-0.5 h-4 w-4 shrink-0 accent-navy-700" />
-                <span>I agree that my medical certificate will be stored securely, seen only by the approver and the programme office, and deleted at the end of the academic year.</span>
+                <span>I agree that my medical certificate will be stored securely, seen only by the approver and the Dean HRM Office, and deleted at the end of the academic year.</span>
               </label>
             )}
             <FormMessage state={state} />

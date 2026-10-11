@@ -23,7 +23,7 @@ const GROUPS: Group[] = [
   { role: 'approver', label: 'Approvals', items: [
     { href: '/approve', label: 'Approval queue', icon: ClipboardCheck },
   ] },
-  { role: 'office', label: 'Programme office', items: [
+  { role: 'office', label: 'Dean HRM Office', items: [
     { href: '/office', label: 'Overview', icon: Gauge, exact: true },
     { href: '/office/leave', label: 'All leave', icon: ListChecks },
     { href: '/office/people', label: 'People', icon: Users },
