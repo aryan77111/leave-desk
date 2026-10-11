@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    @apply bg-canvas text-ink antialiased;
+    font-feature-settings: 'tnum' 1;
+  }
+  h1, h2, h3 { text-wrap: balance; }
+  :focus-visible { outline: 2px solid #E4B84F; outline-offset: 2px; }
+  ::selection { background: #D6E2EE; }
+}
+
+@layer components {
+  .field-input {
+    @apply block w-full rounded border border-line-strong bg-white px-3 py-2 text-sm text-ink placeholder:text-ink-faint
+           focus:border-navy-600 focus:outline-none focus:ring-2 focus:ring-navy-100 disabled:bg-canvas disabled:text-ink-muted;
+  }
+  .label-caps { @apply text-2xs font-semibold uppercase text-ink-muted; }
+  .data-table { @apply w-full border-collapse text-sm; }
+  .data-table th { @apply whitespace-nowrap border-b border-line bg-canvas px-4 py-2.5 text-left text-2xs font-semibold uppercase text-ink-muted; }
+  .data-table td { @apply border-b border-line px-4 py-3 align-top; }
+  .data-table tbody tr:last-child td { @apply border-b-0; }
+  .data-table tbody tr.row-link:hover { @apply bg-navy-50/60; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "leave-desk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Digital student leave approvals for MBA-HRM: apply, faculty acknowledgment, approval, certificates and attendance export.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test lib/*.test.ts",
+    "test:db": "cd supabase/tests && npm install --silent && node run.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/montserrat": "^5.2.8",
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.117.2",
+    "clsx": "2.1.1",
+    "lucide-react": "1.46.0",
+    "next": "15.5.26",
+    "papaparse": "5.7.0",
+    "react": "19.1.9",
+    "react-dom": "19.1.9",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "@types/papaparse": "5.5.2",
+    "@types/react": "19.1.17",
+    "@types/react-dom": "19.1.11",
+    "autoprefixer": "10.5.6",
+    "postcss": "8.5.26",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.9.3"
+  }
+}
