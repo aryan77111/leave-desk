@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import clsx from 'clsx';
-import { Plus } from 'lucide-react';
+import { Plus, Search, X } from 'lucide-react';
 import { Badge, Card, EmptyState, LinkButton, PageHeader, TableWrap } from '@/components/ui/primitives';
 import { academicYearStart, yearLabel, yearOfStudy } from '@/lib/academic';
 import { ROLE_LABEL } from '@/lib/format';
@@ -48,7 +48,6 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
     batchMap.set(key, b);
   }
   const batches = [...batchMap.values()].sort((a, b) => b.batch.localeCompare(a.batch) || a.section.localeCompare(b.section));
-  const batchNames = [...new Set(batches.map((b) => b.batch))];
 
   // Default: students in roll-number order, then everyone without a roll number (staff) by name.
   let query = supabase.from('people').select('*', { count: 'exact' });
@@ -83,30 +82,41 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
         action={<LinkButton href="/office/people/new"><Plus className="h-4 w-4" />Add person</LinkButton>}
       />
 
-      <nav aria-label="People views" className="mb-4 flex gap-5 overflow-x-auto border-b border-line">
-        {VIEWS.map((v) => (
-          <Link key={v.key} href={href({ view: v.key === 'all' ? undefined : v.key, page: undefined })} aria-current={view === v.key ? 'page' : undefined}
-            className={clsx('whitespace-nowrap border-b-2 px-1 pb-2.5 text-sm font-semibold', view === v.key ? 'border-gold-500 text-ink' : 'border-transparent text-ink-muted hover:text-ink')}>
-            {v.label}
-          </Link>
-        ))}
-      </nav>
+      <div className="mb-4 flex flex-col-reverse gap-3 border-b border-line lg:flex-row lg:items-end lg:justify-between">
+        <nav aria-label="People views" className="-mb-px flex gap-5 overflow-x-auto">
+          {VIEWS.map((v) => (
+            <Link key={v.key} href={href({ view: v.key === 'all' ? undefined : v.key, page: undefined })} aria-current={view === v.key ? 'page' : undefined}
+              className={clsx('whitespace-nowrap border-b-2 px-1 pb-2.5 text-sm font-semibold', view === v.key ? 'border-gold-500 text-ink' : 'border-transparent text-ink-muted hover:text-ink')}>
+              {v.label}
+            </Link>
+          ))}
+        </nav>
+        <form role="search" className="relative w-full pb-0 lg:mb-2 lg:w-72">
+          {view !== 'all' && <input type="hidden" name="view" value={view} />}
+          {batchFilter && <input type="hidden" name="batch" value={batchFilter} />}
+          {sp.sort && <input type="hidden" name="sort" value={sp.sort} />}
+          <label htmlFor="people-search" className="sr-only">Search people</label>
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" aria-hidden />
+          <input id="people-search" name="q" type="search" defaultValue={sp.q} placeholder="Search name, email or roll no." className="field-input pl-9" />
+        </form>
+      </div>
 
       <Card>
-        <form className="grid grid-cols-1 gap-3 border-b border-line px-5 py-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto]" role="search">
-          {view !== 'all' && <input type="hidden" name="view" value={view} />}
-          <label className="flex flex-col gap-1"><span className="label-caps">Search</span>
-            <input name="q" defaultValue={sp.q} placeholder="Name, email or student ID" className="field-input" /></label>
-          <label className="flex flex-col gap-1"><span className="label-caps">Batch</span>
-            <select name="batch" defaultValue={batchFilter} className="field-input">
-              <option value="">All batches</option>
-              {batchNames.map((b) => <option key={b} value={b}>{b} · {yearLabel(yearOfStudy(b))}</option>)}
-            </select></label>
-          <div className="flex items-end gap-2">
-            <button className="h-9 rounded bg-navy-700 px-3.5 text-sm font-semibold text-white hover:bg-navy-800">Filter</button>
-            <Link href={href({ q: undefined, batch: undefined, page: undefined })} className="h-9 rounded px-2 text-sm font-semibold leading-9 text-navy-700 hover:bg-navy-50">Clear</Link>
+        {(batchFilter || q) && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3 text-sm">
+            <span className="text-ink-muted">Showing</span>
+            {batchFilter && (
+              <Link href={href({ batch: undefined, page: undefined })} className="inline-flex items-center gap-1.5 rounded bg-navy-50 px-2.5 py-1 font-semibold text-navy-700 ring-1 ring-inset ring-navy-100 hover:bg-navy-100">
+                Batch {batchFilter} <X className="h-3.5 w-3.5" aria-label="Remove batch filter" />
+              </Link>
+            )}
+            {q && (
+              <Link href={href({ q: undefined, page: undefined })} className="inline-flex items-center gap-1.5 rounded bg-navy-50 px-2.5 py-1 font-semibold text-navy-700 ring-1 ring-inset ring-navy-100 hover:bg-navy-100">
+                “{q}” <X className="h-3.5 w-3.5" aria-label="Clear search" />
+              </Link>
+            )}
           </div>
-        </form>
+        )}
         {people.length === 0 ? (
           <EmptyState title={total === 0 && view === 'all' && !q && !batchFilter ? 'No one on the roster yet' : 'No one matches'}>
             {total === 0 && view === 'all' && !q && !batchFilter ? 'Import the student and faculty lists below, or add people one at a time.' : undefined}

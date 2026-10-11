@@ -79,7 +79,7 @@ Emails wait in the outbox until both are set; nothing is lost. Without a verifie
 The Dean HRM Office overview shows a checklist until these steps are done.
 
 ### Managing people over time
-- **People** has quick views for first-year and second-year students, faculty, the Dean, the Dean HRM Office and deactivated people. Year of study comes from the batch name (for example `2025-27`), counting academic years from June.
+- **People** has tabs for first-year and second-year students, all students, faculty, the Dean, the Dean HRM Office and deactivated people, plus one search box. Click a batch in the Batches panel to see just that batch. Year of study comes from the batch name (for example `2025-27`), counting academic years from June.
 - **Edit** any person to fix a name, email, roles, student ID, batch or section, or to switch off their access. **Add person** handles one-off additions.
 - When a batch passes out, use **Batches → Mark as graduated**. This deactivates its students, so they can no longer sign in, but keeps their leave history for audits and attendance queries. It is refused while any request from that batch is still open. **Restore** undoes it.
 
