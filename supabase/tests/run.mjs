@@ -35,7 +35,7 @@ grant usage on schema storage to anon, authenticated;
 grant select, insert on storage.objects to authenticated;
 `;
 await db.exec(stub);
-for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql']) {
+for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql']) {
   try { await db.exec(readFileSync(new URL(f, MIG), 'utf8')); console.log('applied', f); }
   catch (e) { console.error('FAILED applying', f, '\n', e.message); process.exit(1); }
 }
@@ -268,6 +268,39 @@ await throwsLike(() => as(U.office, () => db.query(`select * from public.claim_e
 const tl = await as(U.priya, () => db.query(`select kind from leave_events where leave_id = $1 order by id`, [sickRow.id]));
 ok(!tl.rows.some(r => r.kind === 'escalated'), 'internal escalation hidden from the student timeline');
 ok(tl.rows.some(r => r.kind === 'cancelled'), 'student sees the cancellation in the timeline');
+
+
+// People admin ------------------------------------------------------------------
+console.log('\nPeople admin');
+const priya = await one(`select * from people where email = 'priya@stu.college.edu'`);
+await as(U.office, () => db.query(`select public.update_person($1, 'Priya K. Nair', 'priya@stu.college.edu', 'student', 'UH25041', 'MBA-HRM', '2025-27', 'B')`, [priya.id]));
+const p2 = await one(`select full_name, section, user_id from people where id = $1`, [priya.id]);
+ok(p2.full_name === 'Priya K. Nair' && p2.section === 'B' && p2.user_id === U.priya.id, 'office edits name and section; sign-in stays linked');
+await as(U.office, () => db.query(`select public.update_person($1, 'Priya K. Nair', 'priya.nair@new.college.edu', 'student', 'UH25041', 'MBA-HRM', '2025-27', 'B')`, [priya.id]));
+ok((await one(`select user_id from people where id = $1`, [priya.id])).user_id === null, 'changing the email unlinks the old sign-in');
+await as(U.office, () => db.query(`select public.update_person($1, 'Priya K. Nair', 'priya@stu.college.edu', 'student', 'UH25041', 'MBA-HRM', '2025-27', 'A')`, [priya.id]));
+ok((await one(`select user_id from people where id = $1`, [priya.id])).user_id === U.priya.id, 'changing it back relinks the matching sign-in');
+await throwsLike(() => as(U.office, () => db.query(`select public.update_person($1, 'X', 'priya@stu.college.edu', 'student', null, null, null, null)`, [priya.id])), /student ID, batch and section/, 'student fields required');
+await throwsLike(() => as(U.office, () => db.query(`select public.update_person($1, 'X', 'meera@college.edu', 'student', 'UH25041', null, '2025-27', 'A')`, [priya.id])), /already uses this email/, 'duplicate email refused');
+await throwsLike(() => as(U.office, () => db.query(`select public.update_person($1, 'X', 'priya@stu.college.edu', 'wizard', 'UH25041', null, '2025-27', 'A')`, [priya.id])), /Roles must be/, 'bad role refused');
+const meera = await one(`select id from people where email = 'meera@college.edu'`);
+await as(U.office, () => db.query(`select public.update_person($1, 'Dr. Meera Mohanty', 'meera@college.edu', 'faculty;dean')`, [meera.id]));
+const m2 = await one(`select roles, approver_level from people where id = $1`, [meera.id]);
+ok(m2.roles.includes('approver') && m2.approver_level === 'dean', 'role "dean" gives Dean access');
+const officeRow = await one(`select id from people where email = 'office@college.edu'`);
+await throwsLike(() => as(U.office, () => db.query(`select public.update_person($1, 'Office Admin', 'office@college.edu', 'faculty')`, [officeRow.id])), /own Dean HRM Office access/, 'office cannot remove its own access');
+await throwsLike(() => as(U.aryan, () => db.query(`select public.update_person($1, 'Hacker', 'aryan@stu.college.edu', 'office;student', 'UH25076', null, '2025-27', 'A')`, [priya.id])), /Only the Dean HRM Office/, 'students cannot edit people');
+
+const open1 = await as(U.aryan, () => one(`select public.submit_leave('official', 'Placement interview', $1::date, $1::date, '{}') as ref`, [day(12)]));
+await throwsLike(() => as(U.office, () => db.query(`select public.set_batch_active('2025-27', null, false)`)), /1 leave request in this batch is still open/, 'cannot graduate a batch with open requests');
+await as(U.aryan, () => db.query(`select public.withdraw_leave((select id from leave_requests where ref = $1))`, [open1.ref]));
+const grad = await as(U.office, () => one(`select public.set_batch_active('2025-27', null, false) as n`));
+ok(grad.n === 2, `graduating batch 2025-27 deactivates ${grad.n} students`);
+ok((await one(`select active from people where email = 'meera@college.edu'`)).active === true, 'faculty are not touched');
+await throwsLike(() => as(U.aryan, () => db.query(`select public.submit_leave('medical', 'Fever', $1::date, $1::date, '{}', false, null, null, null, true)`, [today])), /Only registered students/, 'graduated students cannot apply');
+ok((await db.query(`select id from leave_requests where student_id = (select id from people where email = 'aryan@stu.college.edu')`)).rows.length > 0, 'their leave history is kept');
+const back = await as(U.office, () => one(`select public.set_batch_active('2025-27', 'A', true) as n`));
+ok(back.n === 2, 'restoring the batch reactivates them');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

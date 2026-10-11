@@ -48,6 +48,7 @@ export async function importSessions(rows: Record<string, string>[]): Promise<Im
   return { ok: 'Import finished.', ...(data as object) };
 }
 
+// Kept for API compatibility; the People page now edits access on the person page.
 export async function setPersonActive(personId: string, active: boolean): Promise<ActionResult> {
   await requireViewer('office');
   if (!UUID.test(personId)) return { error: 'Person not found.' };
@@ -99,4 +100,69 @@ export async function updateSettings(_prev: ActionResult | null, form: FormData)
   if (count === 0) return { error: 'Only the Dean HRM Office can change the rules.' };
   revalidatePath('/', 'layout');
   return { ok: 'Saved. New rules apply to requests from now on.' };
+}
+
+function personFields(form: FormData) {
+  const roles = form.getAll('roles').map(String).filter((r) => ['student', 'faculty', 'dean', 'office'].includes(r));
+  const isStudent = roles.includes('student');
+  const val = (k: string) => String(form.get(k) ?? '').trim();
+  return {
+    full_name: val('full_name'),
+    email: val('email').toLowerCase(),
+    roles: roles.join(';'),
+    student_no: isStudent ? val('student_no') : '',
+    programme: isStudent ? val('programme') : '',
+    batch: isStudent ? val('batch') : '',
+    section: isStudent ? val('section') : '',
+  };
+}
+
+export async function updatePerson(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  await requireViewer('office');
+  const id = String(form.get('id') ?? '');
+  if (!UUID.test(id)) return { error: 'Person not found.' };
+  const f = personFields(form);
+  if (!f.roles) return { error: 'Choose at least one role.' };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('update_person', {
+    p_person: id, p_full_name: f.full_name, p_email: f.email, p_roles: f.roles,
+    p_student_no: f.student_no || null, p_programme: f.programme || null, p_batch: f.batch || null, p_section: f.section || null,
+    p_active: form.get('active') === 'on',
+  });
+  if (error) return { error: readableError(error) };
+  revalidatePath('/office/people');
+  revalidatePath(`/office/people/${id}`);
+  return { ok: 'Saved.' };
+}
+
+export async function addPerson(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  await requireViewer('office');
+  const f = personFields(form);
+  if (!f.full_name) return { error: 'Add the name.' };
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email)) return { error: 'Enter a valid email address.' };
+  if (!f.roles) return { error: 'Choose at least one role.' };
+  const supabase = await createClient();
+  const { data: existing } = await supabase.from('people').select('id').eq('email', f.email).maybeSingle();
+  if (existing) return { error: 'This email is already on the roster. Search for the person and edit them instead.' };
+  const { data, error } = await supabase.rpc('import_people', { p_rows: [f] });
+  if (error) return { error: readableError(error) };
+  const res = data as { inserted: number; errors: { message: string }[] };
+  if (res.errors?.length) {
+    const msg = res.errors[0].message;
+    if (/people_student_fields/.test(msg)) return { error: 'Students need a student ID, batch and section.' };
+    if (/student_no/.test(msg)) return { error: 'Another student already has this student ID.' };
+    return { error: 'Could not add this person. Check the details and try again.' };
+  }
+  revalidatePath('/office/people');
+  return { ok: `${f.full_name} added. They can sign in with ${f.email}.` };
+}
+
+export async function setBatchActive(batch: string, section: string | null, active: boolean): Promise<ActionResult> {
+  await requireViewer('office');
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('set_batch_active', { p_batch: batch, p_section: section, p_active: active });
+  if (error) return { error: readableError(error) };
+  revalidatePath('/office/people');
+  const n = data as number;
+  return { ok: active ? `${n} student${n === 1 ? '' : 's'} restored.` : `${n} student${n === 1 ? '' : 's'} marked as graduated.` };
 }

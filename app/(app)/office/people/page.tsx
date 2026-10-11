@@ -1,83 +1,146 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import clsx from 'clsx';
+import { Plus } from 'lucide-react';
 import { Badge, Card, EmptyState, LinkButton, PageHeader, TableWrap } from '@/components/ui/primitives';
+import { academicYearStart, yearLabel, yearOfStudy } from '@/lib/academic';
 import { ROLE_LABEL } from '@/lib/format';
 import { requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import type { Person, Role } from '@/lib/types';
-import { ActiveToggle } from './active-toggle';
+import type { Person } from '@/lib/types';
+import { BatchAction } from './batch-actions';
 import { PeopleImport } from './people-import';
 
 export const metadata: Metadata = { title: 'People' };
 const PAGE = 100;
-const ROLES: Role[] = ['student', 'faculty', 'approver', 'office'];
 
-export default async function PeoplePage({ searchParams }: { searchParams: Promise<{ q?: string; role?: string; inactive?: string; page?: string }> }) {
-  const { person: me } = await requireViewer('office');
+const VIEWS = [
+  { key: 'all', label: 'Everyone' },
+  { key: 'students', label: 'All students' },
+  { key: 'year1', label: 'First year' },
+  { key: 'year2', label: 'Second year' },
+  { key: 'faculty', label: 'Faculty' },
+  { key: 'dean', label: 'Dean' },
+  { key: 'office', label: 'Dean HRM Office' },
+  { key: 'inactive', label: 'Deactivated' },
+] as const;
+type View = (typeof VIEWS)[number]['key'];
+
+export default async function PeoplePage({ searchParams }: { searchParams: Promise<{ view?: string; q?: string; batch?: string; page?: string }> }) {
+  await requireViewer('office');
   const sp = await searchParams;
+  const view: View = (VIEWS.find((v) => v.key === sp.view)?.key ?? 'all') as View;
   const page = Math.max(1, Number(sp.page) || 1);
-  const role = ROLES.includes(sp.role as Role) ? (sp.role as Role) : undefined;
   const q = (sp.q ?? '').trim().replace(/[%,()*\\]/g, '').slice(0, 60);
-
+  const batchFilter = (sp.batch ?? '').trim();
+  const Y = academicYearStart();
   const supabase = await createClient();
+
+  // Batch summary (students only)
+  const { data: studentRows } = await supabase.from('people').select('batch, section, active').contains('roles', ['student']).limit(20000);
+  const batchMap = new Map<string, { batch: string; section: string; active: number; inactive: number }>();
+  for (const r of (studentRows ?? []) as { batch: string | null; section: string | null; active: boolean }[]) {
+    if (!r.batch) continue;
+    const key = `${r.batch}|${r.section ?? ''}`;
+    const b = batchMap.get(key) ?? { batch: r.batch, section: r.section ?? '', active: 0, inactive: 0 };
+    if (r.active) b.active++; else b.inactive++;
+    batchMap.set(key, b);
+  }
+  const batches = [...batchMap.values()].sort((a, b) => b.batch.localeCompare(a.batch) || a.section.localeCompare(b.section));
+  const batchNames = [...new Set(batches.map((b) => b.batch))];
+
   let query = supabase.from('people').select('*', { count: 'exact' }).order('full_name').range((page - 1) * PAGE, page * PAGE - 1);
-  if (role) query = query.contains('roles', [role]);
-  if (!sp.inactive) query = query.eq('active', true);
+  query = view === 'inactive' ? query.eq('active', false) : query.eq('active', true);
+  if (view === 'students' || view === 'year1' || view === 'year2') query = query.contains('roles', ['student']);
+  if (view === 'year1') query = query.like('batch', `${Y}%`);
+  if (view === 'year2') query = query.like('batch', `${Y - 1}%`);
+  if (view === 'faculty') query = query.contains('roles', ['faculty']);
+  if (view === 'dean') query = query.contains('roles', ['approver']);
+  if (view === 'office') query = query.contains('roles', ['office']);
+  if (batchFilter) query = query.eq('batch', batchFilter);
   if (q) query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,student_no.ilike.%${q}%`);
   const { data, count } = await query;
   const people = (data ?? []) as Person[];
   const total = count ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE));
-  const link = (p: number) => `/office/people?${new URLSearchParams(Object.entries({ ...sp, page: String(p) }).filter(([, v]) => v) as [string, string][])}`;
+  const href = (over: Record<string, string | undefined>) => {
+    const params = Object.entries({ view: view === 'all' ? undefined : view, q: sp.q, batch: sp.batch, ...over }).filter(([, v]) => v) as [string, string][];
+    return `/office/people${params.length ? `?${new URLSearchParams(params)}` : ''}`;
+  };
+  const studentView = view === 'students' || view === 'year1' || view === 'year2';
 
   return (
     <>
-      <PageHeader title="People" description="The roster. Only people listed here can sign in. Import from a spreadsheet to add or update people; matching is by email." />
+      <PageHeader
+        title="People"
+        description="The roster. Only active people listed here can sign in."
+        action={<LinkButton href="/office/people/new"><Plus className="h-4 w-4" />Add person</LinkButton>}
+      />
 
-      <Card className="mb-6" title="Import people" description="Roles: student, faculty, dean, office (combine with a semicolon, for example faculty;dean). Students need student_no, batch and section.">
-        <div className="px-5 py-4"><PeopleImport /></div>
-      </Card>
+      <nav aria-label="People views" className="mb-4 flex gap-5 overflow-x-auto border-b border-line">
+        {VIEWS.map((v) => (
+          <Link key={v.key} href={href({ view: v.key === 'all' ? undefined : v.key, page: undefined })} aria-current={view === v.key ? 'page' : undefined}
+            className={clsx('whitespace-nowrap border-b-2 px-1 pb-2.5 text-sm font-semibold', view === v.key ? 'border-gold-500 text-ink' : 'border-transparent text-ink-muted hover:text-ink')}>
+            {v.label}
+          </Link>
+        ))}
+      </nav>
 
       <Card>
-        <form className="grid grid-cols-1 gap-3 border-b border-line px-5 py-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto_auto]" role="search">
+        <form className="grid grid-cols-1 gap-3 border-b border-line px-5 py-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto]" role="search">
+          {view !== 'all' && <input type="hidden" name="view" value={view} />}
           <label className="flex flex-col gap-1"><span className="label-caps">Search</span>
             <input name="q" defaultValue={sp.q} placeholder="Name, email or student ID" className="field-input" /></label>
-          <label className="flex flex-col gap-1"><span className="label-caps">Role</span>
-            <select name="role" defaultValue={role ?? ''} className="field-input">
-              <option value="">All roles</option>
-              {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+          <label className="flex flex-col gap-1"><span className="label-caps">Batch</span>
+            <select name="batch" defaultValue={batchFilter} className="field-input">
+              <option value="">All batches</option>
+              {batchNames.map((b) => <option key={b} value={b}>{b} · {yearLabel(yearOfStudy(b))}</option>)}
             </select></label>
-          <label className="flex items-end gap-2 pb-2 text-sm text-ink-soft">
-            <input type="checkbox" name="inactive" value="1" defaultChecked={Boolean(sp.inactive)} className="h-4 w-4 accent-navy-700" /> Include deactivated
-          </label>
           <div className="flex items-end gap-2">
             <button className="h-9 rounded bg-navy-700 px-3.5 text-sm font-semibold text-white hover:bg-navy-800">Filter</button>
-            <Link href="/office/people" className="h-9 rounded px-2 text-sm font-semibold leading-9 text-navy-700 hover:bg-navy-50">Clear</Link>
+            <Link href={href({ q: undefined, batch: undefined, page: undefined })} className="h-9 rounded px-2 text-sm font-semibold leading-9 text-navy-700 hover:bg-navy-50">Clear</Link>
           </div>
         </form>
         {people.length === 0 ? (
-          <EmptyState title={total === 0 && !q && !role ? 'No one on the roster yet' : 'No one matches'}>
-            {total === 0 && !q && !role ? 'Import the student list and faculty list above to get started.' : undefined}
+          <EmptyState title={total === 0 && view === 'all' && !q && !batchFilter ? 'No one on the roster yet' : 'No one matches'}>
+            {total === 0 && view === 'all' && !q && !batchFilter ? 'Import the student and faculty lists below, or add people one at a time.' : undefined}
           </EmptyState>
         ) : (
           <TableWrap>
             <table className="data-table">
-              <thead><tr><th>Name</th><th>Roles</th><th>Class</th><th>Sign-in</th><th></th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  {studentView ? <><th>Student ID</th><th>Batch</th><th>Year</th></> : <><th>Roles</th><th>Class</th></>}
+                  <th>Sign-in</th><th></th>
+                </tr>
+              </thead>
               <tbody>
                 {people.map((p) => (
-                  <tr key={p.id} className={p.active ? '' : 'opacity-60'}>
+                  <tr key={p.id} className={clsx('row-link', !p.active && 'text-ink-muted')}>
                     <td className="min-w-[200px]">
-                      <span className="font-semibold text-ink">{p.full_name}</span>
+                      <Link href={`/office/people/${p.id}`} className="font-semibold text-navy-700 hover:underline">{p.full_name}</Link>
                       <div className="break-all text-xs text-ink-muted">{p.email}</div>
                     </td>
-                    <td>
-                      <div className="flex flex-wrap gap-1">
-                        {p.roles.map((r) => <Badge key={r} tone={r === 'student' ? 'quiet' : 'info'}>{ROLE_LABEL[r]}</Badge>)}
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap text-ink-soft">{p.student_no ? `${p.student_no} · ${p.batch} ${p.section}` : '—'}</td>
+                    {studentView ? (
+                      <>
+                        <td className="whitespace-nowrap">{p.student_no}</td>
+                        <td className="whitespace-nowrap">{p.batch} · {p.section}</td>
+                        <td className="whitespace-nowrap">{yearLabel(yearOfStudy(p.batch))}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td>
+                          <div className="flex flex-wrap gap-1">
+                            {p.roles.map((r) => <Badge key={r} tone={r === 'student' ? 'quiet' : 'info'}>{ROLE_LABEL[r]}</Badge>)}
+                            {!p.active && <Badge tone="quiet">Deactivated</Badge>}
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap text-ink-soft">{p.student_no ? `${p.student_no} · ${p.batch} ${p.section}` : '—'}</td>
+                      </>
+                    )}
                     <td className="whitespace-nowrap">{p.user_id ? <span className="text-ok-fg">Signed in</span> : <span className="text-ink-muted">Not yet</span>}</td>
-                    <td className="text-right">{p.id !== me.id && <ActiveToggle personId={p.id} active={p.active} />}</td>
+                    <td className="text-right"><Link href={`/office/people/${p.id}`} className="text-sm font-semibold text-navy-700 hover:underline">Edit</Link></td>
                   </tr>
                 ))}
               </tbody>
@@ -88,11 +151,42 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
           <span>{total} {total === 1 ? 'person' : 'people'}{pages > 1 ? ` · page ${page} of ${pages}` : ''}</span>
           {pages > 1 && (
             <div className="flex gap-2">
-              {page > 1 && <LinkButton variant="secondary" href={link(page - 1)}>Previous</LinkButton>}
-              {page < pages && <LinkButton variant="secondary" href={link(page + 1)}>Next</LinkButton>}
+              {page > 1 && <LinkButton variant="secondary" href={href({ page: String(page - 1) })}>Previous</LinkButton>}
+              {page < pages && <LinkButton variant="secondary" href={href({ page: String(page + 1) })}>Next</LinkButton>}
             </div>
           )}
         </div>
+      </Card>
+
+      <Card className="mt-6" title="Batches" description={`Year of study is worked out from the batch name for the academic year starting June ${Y}. Graduating a batch deactivates its students; their leave history is kept.`}>
+        {batches.length === 0 ? (
+          <EmptyState title="No student batches yet" />
+        ) : (
+          <TableWrap>
+            <table className="data-table">
+              <thead><tr><th>Batch</th><th>Section</th><th>Year</th><th>Active</th><th>Graduated</th><th></th></tr></thead>
+              <tbody>
+                {batches.map((b) => {
+                  const yr = yearOfStudy(b.batch);
+                  return (
+                    <tr key={`${b.batch}|${b.section}`}>
+                      <td className="whitespace-nowrap font-semibold"><Link href={href({ view: 'students', batch: b.batch, page: undefined })} className="text-navy-700 hover:underline">{b.batch}</Link></td>
+                      <td>{b.section || '—'}</td>
+                      <td className="whitespace-nowrap">{yr !== null && yr > 2 && b.active > 0 ? <Badge tone="warn">Passed out</Badge> : yearLabel(yr)}</td>
+                      <td className="tabular-nums">{b.active}</td>
+                      <td className="tabular-nums text-ink-muted">{b.inactive}</td>
+                      <td className="text-right"><BatchAction batch={b.batch} section={b.section} active={b.active} inactive={b.inactive} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </TableWrap>
+        )}
+      </Card>
+
+      <Card className="mt-6" title="Import from a spreadsheet" description="Add or update many people at once; matching is by email. Roles: student, faculty, dean, office (combine with a semicolon, for example faculty;dean). Students need student_no, batch and section.">
+        <div className="px-5 py-4"><PeopleImport /></div>
       </Card>
     </>
   );
