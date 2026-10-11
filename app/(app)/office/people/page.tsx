@@ -26,13 +26,14 @@ const VIEWS = [
 ] as const;
 type View = (typeof VIEWS)[number]['key'];
 
-export default async function PeoplePage({ searchParams }: { searchParams: Promise<{ view?: string; q?: string; batch?: string; page?: string }> }) {
+export default async function PeoplePage({ searchParams }: { searchParams: Promise<{ view?: string; q?: string; batch?: string; page?: string; sort?: string }> }) {
   await requireViewer('office');
   const sp = await searchParams;
   const view: View = (VIEWS.find((v) => v.key === sp.view)?.key ?? 'all') as View;
   const page = Math.max(1, Number(sp.page) || 1);
   const q = (sp.q ?? '').trim().replace(/[%,()*\\]/g, '').slice(0, 60);
   const batchFilter = (sp.batch ?? '').trim();
+  const sortByName = sp.sort === 'name';
   const Y = academicYearStart();
   const supabase = await createClient();
 
@@ -49,7 +50,12 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
   const batches = [...batchMap.values()].sort((a, b) => b.batch.localeCompare(a.batch) || a.section.localeCompare(b.section));
   const batchNames = [...new Set(batches.map((b) => b.batch))];
 
-  let query = supabase.from('people').select('*', { count: 'exact' }).order('full_name').range((page - 1) * PAGE, page * PAGE - 1);
+  // Default: students in roll-number order, then everyone without a roll number (staff) by name.
+  let query = supabase.from('people').select('*', { count: 'exact' });
+  query = sortByName
+    ? query.order('full_name')
+    : query.order('student_no', { ascending: true, nullsFirst: false }).order('full_name');
+  query = query.range((page - 1) * PAGE, page * PAGE - 1);
   query = view === 'inactive' ? query.eq('active', false) : query.eq('active', true);
   if (view === 'students' || view === 'year1' || view === 'year2') query = query.contains('roles', ['student']);
   if (view === 'year1') query = query.like('batch', `${Y}%`);
@@ -64,7 +70,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
   const total = count ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE));
   const href = (over: Record<string, string | undefined>) => {
-    const params = Object.entries({ view: view === 'all' ? undefined : view, q: sp.q, batch: sp.batch, ...over }).filter(([, v]) => v) as [string, string][];
+    const params = Object.entries({ view: view === 'all' ? undefined : view, q: sp.q, batch: sp.batch, sort: sp.sort, ...over }).filter(([, v]) => v) as [string, string][];
     return `/office/people${params.length ? `?${new URLSearchParams(params)}` : ''}`;
   };
   const studentView = view === 'students' || view === 'year1' || view === 'year2';
@@ -148,7 +154,13 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
           </TableWrap>
         )}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3 text-sm text-ink-muted">
-          <span>{total} {total === 1 ? 'person' : 'people'}{pages > 1 ? ` · page ${page} of ${pages}` : ''}</span>
+          <span>
+            {total} {total === 1 ? 'person' : 'people'}{pages > 1 ? ` · page ${page} of ${pages}` : ''} · Sorted by{' '}
+            {sortByName ? 'name' : 'roll number'} ·{' '}
+            <Link href={href({ sort: sortByName ? undefined : 'name', page: undefined })} className="font-semibold text-navy-700 hover:underline">
+              Sort by {sortByName ? 'roll number' : 'name'}
+            </Link>
+          </span>
           {pages > 1 && (
             <div className="flex gap-2">
               {page > 1 && <LinkButton variant="secondary" href={href({ page: String(page - 1) })}>Previous</LinkButton>}

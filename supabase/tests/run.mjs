@@ -35,7 +35,7 @@ grant usage on schema storage to anon, authenticated;
 grant select, insert on storage.objects to authenticated;
 `;
 await db.exec(stub);
-for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql']) {
+for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql']) {
   try { await db.exec(readFileSync(new URL(f, MIG), 'utf8')); console.log('applied', f); }
   catch (e) { console.error('FAILED applying', f, '\n', e.message); process.exit(1); }
 }
