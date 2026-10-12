@@ -6,6 +6,7 @@ import type { AckStatus, LeaveEvent, LeaveRequest } from '@/lib/types';
 export type LeaveDetailData = LeaveRequest & {
   student: { id: string; full_name: string; student_no: string | null; email: string; batch: string | null; section: string | null; programme: string | null } | null;
   decider: { full_name: string } | null;
+  filer: { full_name: string } | null;
   leave_sessions: { session: { id: string; course_code: string; course_name: string | null; starts_at: string; faculty_id: string } | null }[];
   faculty_acks: { faculty_id: string; status: AckStatus; note: string | null; responded_at: string | null; faculty: { full_name: string } | null }[];
 };
@@ -15,6 +16,7 @@ export type Concern = { id: number; concern: string; created_at: string; faculty
 const DETAIL_SELECT = `*,
   student:people!leave_requests_student_id_fkey(id, full_name, student_no, email, batch, section, programme),
   decider:people!leave_requests_decided_by_fkey(full_name),
+  filer:people!leave_requests_filed_by_fkey(full_name),
   leave_sessions(session:class_sessions(id, course_code, course_name, starts_at, faculty_id)),
   faculty_acks(faculty_id, status, note, responded_at, faculty:people(full_name))`;
 
@@ -25,8 +27,10 @@ export async function getLeaveByRef(supabase: SupabaseClient, ref: string) {
 }
 
 export async function getEvents(supabase: SupabaseClient, leaveId: string) {
-  const { data } = await supabase.from('leave_events').select('id, kind, message, created_at').eq('leave_id', leaveId).order('created_at').order('id');
-  return (data ?? []) as LeaveEvent[];
+  const { data } = await supabase.from('leave_events')
+    .select('id, kind, message, created_at, visible_to_student, actor:people!leave_events_actor_id_fkey(full_name)')
+    .eq('leave_id', leaveId).order('created_at').order('id');
+  return (data ?? []) as unknown as LeaveEvent[];
 }
 
 export async function getConcerns(supabase: SupabaseClient, leaveId: string) {
@@ -34,7 +38,7 @@ export async function getConcerns(supabase: SupabaseClient, leaveId: string) {
   return (data ?? []) as unknown as Concern[];
 }
 
-export function nextStep(l: Pick<LeaveRequest, 'status' | 'approver_level' | 'doc_deadline' | 'decision_note'>, audience: 'student' | 'staff', acks?: { status: AckStatus }[]) {
+export function nextStep(l: Pick<LeaveRequest, 'status' | 'approver_level' | 'doc_deadline' | 'decision_note'> & { cancel_reason?: string | null }, audience: 'student' | 'staff', acks?: { status: AckStatus }[]) {
   const answered = acks ? acks.filter((a) => a.status !== 'pending').length : 0;
   switch (l.status) {
     case 'submitted':
@@ -50,7 +54,9 @@ export function nextStep(l: Pick<LeaveRequest, 'status' | 'approver_level' | 'do
     case 'rejected':
       return 'Not approved.';
     case 'cancelled':
-      return 'Cancelled because the certificate was not uploaded by the deadline. The absence counts as unapproved.';
+      return l.cancel_reason && !/certificate was not uploaded/i.test(l.cancel_reason)
+        ? `Cancelled by the Dean HRM Office: ${l.cancel_reason}`
+        : 'Cancelled because the certificate was not uploaded by the deadline. The absence counts as unapproved.';
     case 'withdrawn':
       return 'Withdrawn by the student before a decision.';
   }

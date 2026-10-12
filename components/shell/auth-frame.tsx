@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 /** Centred card used by sign-in, no-access and the faculty link page. */
@@ -14,7 +15,7 @@ export function AuthFrame({ children, wide = false }: { children: ReactNode; wid
         <div className={wide ? 'w-full max-w-2xl' : 'w-full max-w-md'}>{children}</div>
       </main>
       <footer className="px-4 pb-6 text-center text-xs text-ink-faint">
-        Leave Desk for the MBA-HRM programme. For help, contact the Dean HRM Office.
+        Leave Desk for the MBA-HRM programme. <Link href="/help" className="font-semibold text-navy-700 hover:underline">Help and rules</Link>
       </footer>
     </div>
   );

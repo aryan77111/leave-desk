@@ -2,7 +2,7 @@ import 'server-only';
 import { cache } from 'react';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import type { Person, Role, Settings } from '@/lib/types';
+import type { Delegation, Person, Role, Settings } from '@/lib/types';
 
 export type Viewer = { userId: string; email: string; person: Person };
 
@@ -23,6 +23,38 @@ export async function requireViewer(role?: Role): Promise<Viewer> {
   if (!s.person) redirect('/no-access');
   if (role && !s.person.roles.includes(role)) redirect('/');
   return { userId: s.userId, email: s.email, person: s.person };
+}
+
+/** Signed in with any one of these roles. */
+export async function requireOneOf(roles: Role[]): Promise<Viewer> {
+  const v = await requireViewer();
+  if (!roles.some((r) => v.person.roles.includes(r))) redirect('/');
+  return v;
+}
+
+/** The signed-in person's current or next delegation to decide for the Dean. Cached per request. */
+export const getDelegation = cache(async (): Promise<Delegation | null> => {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc('my_delegation');
+  return (data as Delegation | null) ?? null;
+});
+
+/** The Dean, or a colleague the Dean has named while away (today within their dates). */
+export async function requireDecider(): Promise<Viewer & { delegate: boolean }> {
+  const v = await requireViewer();
+  if (v.person.roles.includes('approver')) return { ...v, delegate: false };
+  const d = await getDelegation();
+  if (d?.active) return { ...v, delegate: true };
+  redirect('/');
+}
+
+/** People who can see every request: the Dean HRM Office, the Dean and an active delegate. */
+export async function requireStaff(): Promise<Viewer & { delegate: boolean }> {
+  const v = await requireViewer();
+  if (v.person.roles.includes('office') || v.person.roles.includes('approver')) return { ...v, delegate: false };
+  const d = await getDelegation();
+  if (d?.active) return { ...v, delegate: true };
+  redirect('/');
 }
 
 export const getSettings = cache(async (): Promise<Settings> => {

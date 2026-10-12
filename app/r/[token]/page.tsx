@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { AuthFrame } from '@/components/shell/auth-frame';
 import { Alert } from '@/components/ui/primitives';
 import { ACK_LABEL, fmtDay, fmtRange, fmtStamp, fmtTime, localDate, TYPE_LABEL } from '@/lib/format';
@@ -23,6 +24,7 @@ type Context = {
   to_date?: string;
   reason?: string | null;
   respond_by?: string;
+  link_expires_at?: string;
   sessions?: { course_code: string; course_name: string | null; starts_at: string }[];
 };
 
@@ -32,11 +34,16 @@ export default async function TokenPage({ params }: { params: Promise<{ token: s
   const { data } = await supabase.rpc('token_context', { p_token: token });
   const c = (data ?? { state: 'invalid' }) as Context;
 
-  if (c.state === 'invalid') {
+  if (c.state === 'invalid' || c.state === 'expired' || c.state === 'closed') {
+    const msg = {
+      invalid: { tone: 'bad' as const, title: 'This link is not valid', body: 'Check that you opened the whole link from the email.' },
+      expired: { tone: 'warn' as const, title: 'This link has expired', body: 'Links in leave emails work for a limited time, so they do not keep showing student details.' },
+      closed: { tone: 'quiet' as const, title: `${c.ref ?? 'This request'} is closed`, body: 'The request was withdrawn, decided or cancelled, so no response is needed.' },
+    }[c.state];
     return (
       <AuthFrame>
-        <Alert tone="bad" title="This link is not valid">
-          Check that you opened the whole link from the email. You can also sign in to Leave Desk to see your notices.
+        <Alert tone={msg.tone} title={msg.title}>
+          {msg.body} <Link href="/login" className="font-semibold underline underline-offset-2">Sign in to Leave Desk</Link> to see your current notices.
         </Alert>
       </AuthFrame>
     );
@@ -77,6 +84,8 @@ export default async function TokenPage({ params }: { params: Promise<{ token: s
               <TokenResponse token={token} />
               <p className="mt-4 text-xs text-ink-muted">
                 No reply by {fmtStamp(c.respond_by!)} is recorded as acknowledged. Make-up of any evaluation stays at your discretion.
+                {c.link_expires_at && <> This link works until {fmtStamp(c.link_expires_at)}.</>}{' '}
+                <Link href="/help#faculty" className="font-semibold text-navy-700 hover:underline">Why am I getting this?</Link>
               </p>
             </div>
           )}
@@ -85,8 +94,6 @@ export default async function TokenPage({ params }: { params: Promise<{ token: s
               Recorded as “{ACK_LABEL[c.ack_status!]}”{c.responded_at ? ` on ${fmtStamp(c.responded_at)}` : ''}. Nothing more is needed.
             </Alert>
           )}
-          {c.state === 'closed' && <Alert tone="quiet" title="This request is closed">The request was withdrawn or decided, so no response is needed.</Alert>}
-          {c.state === 'expired' && <Alert tone="warn" title="This link has expired">Sign in to Leave Desk to see current notices.</Alert>}
         </div>
       </div>
     </AuthFrame>

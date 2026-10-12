@@ -9,6 +9,26 @@ Digital student leave approvals for the MBA-HRM programme. It replaces the paper
 
 Automatic jobs handle deemed acknowledgment, reminders to the Dean, certificate reminders and auto-cancellation.
 
+## Pilot features
+
+| Feature | Where | Who |
+| --- | --- | --- |
+| **Pilot results**: decided within the reminder time, faculty replies in their window, certificates on time, requests made online, survey satisfaction, each against its target; per-request CSV for the Week 11 report | Pilot results (`/results`) | Dean, Dean HRM Office |
+| **Out of office**: name a faculty member or office colleague to decide for given dates. They get the Dean's emails and queue; decisions say "on behalf of the Dean" | Out of office / Dean's delegates (`/away`) | Dean, Dean HRM Office |
+| **File leave for a student**, including after the dates (hospital, emergency); no timing rules; a reason for filing is required and kept off the student's view | File leave for a student | Dean HRM Office |
+| **Correct** the dates and sessions of an open or approved request, or **cancel** a mistaken one, with a reason on the history | Request page → Correct or cancel | Dean HRM Office |
+| **Change a request** (dates, sessions, reason, travel) until it is decided. Faculty whose sessions change are re-notified; faculty no longer affected are told | My leave → request → Change request | Students |
+| **History** of every step with who did it and when; office-only entries are marked | Every request page | Dean, office (students see their own entries) |
+| **Report a problem / suggest something** link at the bottom of every page; problems are emailed to the office | Feedback (`/office/feedback`) | Everyone / office |
+| **End-of-pilot survey** (satisfaction, ease, quicker than paper) with a banner while open | Rules and settings → Survey is open | Everyone |
+| **Help and rules** page, public, linked from every email and the faculty link page | `/help` | Everyone |
+| **Link expiry**: faculty links work once and for a set number of days (default 7); expired or closed links show nothing about the request | Rules and settings | — |
+| **Error monitoring**: unexpected server and browser errors are logged; the office gets at most one alert email an hour | System health (`/office/health`) | Dean HRM Office |
+| **Leave calendar**: who is on leave each day, by batch | Leave calendar (`/calendar`) | Dean, delegate, office |
+| **Bulk approval**: tick requests and approve them together; requests with a faculty concern must be opened | Approval queue | Dean, delegate |
+
+Phone layouts: lists become cards below tablet width, buttons are at least 44 px tall where people tap them on phones, and the approval bar stays at the bottom while selecting.
+
 ## How it is built
 
 | Layer | Choice |
@@ -70,7 +90,10 @@ All workflow rules live in the database (`supabase/migrations`). The app calls f
 
 Emails wait in the outbox until both are set; nothing is lost. Without a verified domain, Resend only delivers to the account owner's address.
 
-### 5. Load the roster and timetable
+### 5. Fill in the help contact
+In **Rules and settings → Help page contact**, add the office desk name, email and phone. They appear on the public Help and rules page that every email links to.
+
+### 6. Load the roster and timetable
 - **People → Import people** (download the template first).
   - Roles: `student`, `faculty`, `dean`, `office`. Combine roles with `;` (for example `faculty;dean`).
   - Students need `student_no`, `batch` and `section`.
@@ -115,6 +138,8 @@ The Dean HRM Office overview shows a checklist until these steps are done.
 | Medical certificate deadline | 2 days after resuming |
 | Who decides | The Dean, for every request |
 | Longest leave applied for online | 15 days |
+| Faculty email links work for | 7 days |
+| Pilot targets | decisions 90%, faculty replies 80%, certificates 90%, satisfaction 4.0 / 5 |
 
 ## Development
 
@@ -123,12 +148,19 @@ npm install
 cp .env.example .env.local
 npm run dev          # http://localhost:3000 (add http://localhost:3000/auth/callback to Supabase redirect URLs)
 npm test             # date, routing and CSV unit tests
-npm run test:db      # 84 workflow and security tests against an in-process Postgres
+npm run test:db      # 199 workflow and security tests against an in-process Postgres
 npm run typecheck
 npm run build
 ```
 
 Database changes go in a new file under `supabase/migrations`. Apply them with the Supabase CLI (`supabase db push`) or the dashboard SQL editor, and add a test to `supabase/tests/run.mjs`.
+
+## Running the pilot
+- **Week 1**: check **System health** once a day. Green means reminders, emails and timetable sync are running.
+- **Before the Dean travels**: Dean (or office) uses **Out of office** to name a delegate for those dates.
+- **If a student cannot apply**: **File leave for a student**; it goes to the Dean as usual.
+- **Last week**: tick **Survey is open** in Rules and settings. A banner asks everyone two questions.
+- **Week 11 report**: **Pilot results** for the pilot dates, then **Download per-request CSV**.
 
 ## Not included yet
 - Automatic deletion of certificates at the end of the academic year. Delete them from Storage by date for now.

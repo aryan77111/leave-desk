@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
+import { LeaveForm } from '@/components/leave/leave-form';
 import { PageHeader } from '@/components/ui/primitives';
 import { getSettings, requireViewer } from '@/lib/session';
-import { NewLeaveForm } from './new-leave-form';
+import { submitLeave } from '../actions';
 
 export const metadata: Metadata = { title: 'Apply for leave' };
 
@@ -15,7 +16,9 @@ export default async function NewLeavePage() {
         title="Apply for leave"
         description="Your faculty are emailed as soon as you submit. You do not need their signatures."
       />
-      <NewLeaveForm
+      <LeaveForm
+        mode="apply"
+        action={submitLeave}
         batch={person.batch!}
         section={person.section!}
         rules={{

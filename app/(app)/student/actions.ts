@@ -34,6 +34,30 @@ export async function submitLeave(_prev: ActionResult | null, form: FormData): P
   redirect(`/student/leave/${data as string}?submitted=1`);
 }
 
+export async function editLeave(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  await requireViewer('student');
+  const leaveId = str(form.get('leave_id'));
+  const ref = str(form.get('ref'));
+  if (!UUID.test(leaveId)) return { error: 'Leave request not found.' };
+  const away = form.get('away') === 'on';
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('edit_leave', {
+    p_leave: leaveId,
+    p_reason: str(form.get('reason')),
+    p_from: str(form.get('from')) || null,
+    p_to: str(form.get('to')) || null,
+    p_session_ids: form.getAll('session').map(String).filter((id) => UUID.test(id)),
+    p_away: away,
+    p_return: away ? str(form.get('return_date')) || null : null,
+    p_contact_name: away ? str(form.get('contact_name')) : null,
+    p_contact_phone: away ? str(form.get('contact_phone')) : null,
+  });
+  if (error) return { error: readableError(error) };
+  revalidatePath('/student');
+  revalidatePath(`/student/leave/${ref}`);
+  redirect(`/student/leave/${ref}?changed=1`);
+}
+
 export async function withdrawLeave(leaveId: string, ref: string): Promise<ActionResult> {
   await requireViewer('student');
   if (!UUID.test(leaveId)) return { error: 'Leave request not found.' };

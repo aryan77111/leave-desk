@@ -1,5 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { readableError } from '@/lib/errors';
 import { requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -60,6 +61,12 @@ export async function setPersonActive(personId: string, active: boolean): Promis
 }
 
 const INT_FIELDS = ['notice_hours', 'medical_late_hours', 'medical_ahead_days', 'ack_hours', 'escalate_hours', 'doc_days', 'max_leave_days'] as const;
+const RANGES: Record<string, [number, number, string]> = {
+  link_days: [1, 30, 'Faculty links must last between 1 and 30 days.'],
+  target_decision_pct: [0, 100, 'Targets are percentages from 0 to 100.'],
+  target_ack_pct: [0, 100, 'Targets are percentages from 0 to 100.'],
+  target_cert_pct: [0, 100, 'Targets are percentages from 0 to 100.'],
+};
 
 export async function updateSettings(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
   const { person } = await requireViewer('office');
@@ -69,6 +76,16 @@ export async function updateSettings(_prev: ActionResult | null, form: FormData)
     if (!Number.isInteger(v) || v < 0 || v > 720) return { error: 'Use whole numbers between 0 and 720.' };
     patch[k] = v;
   }
+  for (const [k, [lo, hi, msg]] of Object.entries(RANGES)) {
+    const v = Number(form.get(k));
+    if (!Number.isInteger(v) || v < lo || v > hi) return { error: msg };
+    patch[k] = v;
+  }
+  const sat = Number(form.get('target_satisfaction'));
+  if (!Number.isFinite(sat) || sat < 1 || sat > 5) return { error: 'The satisfaction target is a rating from 1 to 5.' };
+  patch.target_satisfaction = Math.round(sat * 10) / 10;
+  patch.survey_open = form.get('survey_open') === 'on';
+
   const programme = String(form.get('programme_name') ?? '').trim();
   if (!programme) return { error: 'Add the programme name.' };
   patch.programme_name = programme;
@@ -93,6 +110,12 @@ export async function updateSettings(_prev: ActionResult | null, form: FormData)
   const domains = String(form.get('allowed_domains') ?? '')
     .split(/[\s,;]+/).map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
   patch.allowed_domains = domains;
+
+  const contactEmail = String(form.get('help_contact_email') ?? '').trim();
+  if (contactEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contactEmail)) return { error: 'The contact email is not valid.' };
+  patch.help_contact_name = String(form.get('help_contact_name') ?? '').trim().slice(0, 120) || null;
+  patch.help_contact_email = contactEmail || null;
+  patch.help_contact_phone = String(form.get('help_contact_phone') ?? '').trim().slice(0, 40) || null;
 
   const supabase = await createClient();
   const { error, count } = await supabase.from('settings').update(patch, { count: 'exact' }).eq('id', 1);
@@ -165,4 +188,78 @@ export async function setBatchActive(batch: string, section: string | null, acti
   revalidatePath('/office/people');
   const n = data as number;
   return { ok: active ? `${n} student${n === 1 ? '' : 's'} restored.` : `${n} student${n === 1 ? '' : 's'} marked as graduated.` };
+}
+
+// ---------------------------------------------------------------------------
+// Filing, correcting and cancelling requests for students
+// ---------------------------------------------------------------------------
+const s = (v: FormDataEntryValue | null) => (typeof v === 'string' ? v.trim() : '');
+const sessionIds = (form: FormData) => form.getAll('session').map(String).filter((id) => UUID.test(id));
+
+export async function fileLeave(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  await requireViewer('office');
+  const studentId = s(form.get('student_id'));
+  const type = s(form.get('type'));
+  if (!UUID.test(studentId)) return { error: 'Choose a student.' };
+  if (!['medical', 'family', 'official'].includes(type)) return { error: 'Choose the purpose of leave.' };
+  const away = form.get('away') === 'on';
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('office_file_leave', {
+    p_student: studentId,
+    p_type: type,
+    p_reason: s(form.get('reason')),
+    p_from: s(form.get('from')) || null,
+    p_to: s(form.get('to')) || null,
+    p_session_ids: sessionIds(form),
+    p_away: away,
+    p_return: away ? s(form.get('return_date')) || null : null,
+    p_contact_name: away ? s(form.get('contact_name')) : null,
+    p_contact_phone: away ? s(form.get('contact_phone')) : null,
+    p_office_note: s(form.get('office_note')),
+  });
+  if (error) return { error: readableError(error) };
+  revalidatePath('/office/leave');
+  revalidatePath('/office');
+  redirect(`/office/leave/${data as string}?filed=1`);
+}
+
+export async function amendLeave(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  await requireViewer('office');
+  const leaveId = s(form.get('leave_id'));
+  const ref = s(form.get('ref'));
+  if (!UUID.test(leaveId)) return { error: 'Leave request not found.' };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('office_amend_leave', {
+    p_leave: leaveId,
+    p_from: s(form.get('from')) || null,
+    p_to: s(form.get('to')) || null,
+    p_session_ids: sessionIds(form),
+    p_note: s(form.get('office_note')),
+  });
+  if (error) return { error: readableError(error) };
+  revalidatePath(`/office/leave/${ref}`);
+  redirect(`/office/leave/${ref}?corrected=1`);
+}
+
+export async function cancelLeave(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  await requireViewer('office');
+  const leaveId = s(form.get('leave_id'));
+  const ref = s(form.get('ref'));
+  if (!UUID.test(leaveId)) return { error: 'Leave request not found.' };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('office_cancel_leave', { p_leave: leaveId, p_note: s(form.get('note')) });
+  if (error) return { error: readableError(error) };
+  revalidatePath(`/office/leave/${ref}`);
+  revalidatePath('/office/leave');
+  return { ok: 'Cancelled. The student, and anyone still waiting on it, have been emailed.' };
+}
+
+export async function setFeedbackStatus(id: number, status: 'new' | 'seen' | 'done', note?: string): Promise<ActionResult> {
+  await requireViewer('office');
+  if (!Number.isInteger(id)) return { error: 'Feedback not found.' };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('set_feedback_status', { p_id: id, p_status: status, p_note: note ?? null });
+  if (error) return { error: readableError(error) };
+  revalidatePath('/office/feedback');
+  return { ok: 'Saved.' };
 }

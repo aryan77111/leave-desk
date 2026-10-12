@@ -5,7 +5,7 @@ import { LeaveDetail } from '@/components/leave/leave-detail';
 import { Card, PageHeader } from '@/components/ui/primitives';
 import { daysInclusive, plural, TYPE_LABEL } from '@/lib/format';
 import { getConcerns, getEvents, getLeaveByRef } from '@/lib/leave';
-import { getSettings, requireViewer } from '@/lib/session';
+import { getSettings, requireDecider } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { DecisionForm } from './decision-form';
 
@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: { params: Promise<{ ref: stri
 
 export default async function ApproveDetail({ params }: { params: Promise<{ ref: string }> }) {
   const { ref } = await params;
-  await requireViewer('approver');
+  const { delegate } = await requireDecider();
   const supabase = await createClient();
   const leave = await getLeaveByRef(supabase, ref);
   if (!leave) notFound();
@@ -34,7 +34,7 @@ export default async function ApproveDetail({ params }: { params: Promise<{ ref:
 
   const aside = (
     <>
-      {canDecide && <DecisionForm leaveId={leave.id} leaveRef={leave.ref} medical={leave.type === 'medical'} docDays={s.doc_days} />}
+      {canDecide && <DecisionForm leaveId={leave.id} leaveRef={leave.ref} medical={leave.type === 'medical'} docDays={s.doc_days} delegate={delegate} />}
       <Card title="Leave in the last 6 months">
         <p className="px-5 py-4 text-sm text-ink-soft">
           {past.length === 0

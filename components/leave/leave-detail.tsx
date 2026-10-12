@@ -23,11 +23,16 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
       : []),
     { label: 'Type', value: TYPE_LABEL[leave.type] },
     { label: 'Dates', value: `${fmtRange(leave.from_date, leave.to_date)} · ${plural(days, 'day')}` },
-    { label: 'Submitted', value: fmtStamp(leave.submitted_at) },
+    { label: leave.filed_by ? 'Filed' : 'Submitted', value: <>{fmtStamp(leave.submitted_at)}{leave.filed_by && <span className="text-ink-muted"> · by the Dean HRM Office{isStaff && leave.filer ? ` (${leave.filer.full_name})` : ''}</span>}</> },
+    ...(leave.edited_at ? [{ label: 'Last changed', value: fmtStamp(leave.edited_at) }] : []),
+    ...(isStaff && leave.decided_at && leave.decider
+      ? [{ label: 'Decided', value: <>{fmtStamp(leave.decided_at)}<span className="text-ink-muted"> · {leave.decider.full_name}{leave.decided_by_delegate ? ', on behalf of the Dean' : ''}</span></> }]
+      : []),
     { label: 'Away from campus', value: leave.away_from_campus && leave.return_date ? `Yes, back on ${fmtDay(leave.return_date)}` : 'No' },
     ...(leave.away_from_campus ? [{ label: 'Contact during absence', value: `${leave.contact_name} · ${leave.contact_phone}` }] : []),
     { label: 'Reason', value: <span className="whitespace-pre-line">{leave.reason}</span>, wide: true },
     ...(leave.decision_note ? [{ label: leave.status === 'rejected' ? 'Reason for decision' : 'Note from the Dean', value: leave.decision_note, wide: true }] : []),
+    ...(isStaff && leave.office_note ? [{ label: 'Dean HRM Office note (not shown to the student)', value: <span className="whitespace-pre-line">{leave.office_note}</span>, wide: true }] : []),
   ];
 
   return (
@@ -84,12 +89,20 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
           )}
         </Card>
 
-        <Card title="History">
+        <Card title="History" description={isStaff ? 'Every step, who took it and when. Entries marked “office only” are not shown to the student.' : undefined}>
           <ol className="px-5 py-2">
             {events.map((e) => (
               <li key={e.id} className="grid grid-cols-1 gap-0.5 border-b border-dashed border-line py-3 last:border-b-0 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-4">
-                <time className="text-xs text-ink-muted sm:pt-0.5">{fmtStamp(e.created_at)}</time>
-                <span className="text-sm text-ink">{e.message}</span>
+                <time dateTime={e.created_at} className="text-xs text-ink-muted sm:pt-0.5">{fmtStamp(e.created_at)}</time>
+                <div className="min-w-0 text-sm text-ink">
+                  <span className="break-words">{e.message}</span>
+                  {isStaff && (
+                    <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+                      <span>{e.actor?.full_name ? `by ${e.actor.full_name}` : 'automatic'}</span>
+                      {e.visible_to_student === false && <span className="rounded bg-quiet-bg px-1.5 py-0.5 font-semibold text-quiet-fg">office only</span>}
+                    </span>
+                  )}
+                </div>
               </li>
             ))}
           </ol>

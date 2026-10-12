@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import '@fontsource-variable/montserrat/index.css';
 import './globals.css';
+import { ErrorReporter } from '@/components/shell/error-reporter';
 
 export const metadata: Metadata = {
   title: { default: 'Leave Desk', template: '%s · Leave Desk' },
@@ -13,7 +14,10 @@ export const viewport: Viewport = { themeColor: '#003C6F', width: 'device-width'
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-IN">
-      <body className="min-h-screen font-sans">{children}</body>
+      <body className="min-h-screen font-sans">
+        <ErrorReporter />
+        {children}
+      </body>
     </html>
   );
 }

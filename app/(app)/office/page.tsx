@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { CheckCircle2, Circle } from 'lucide-react';
-import { Card, EmptyState, LinkButton, PageHeader, Stat, TableWrap } from '@/components/ui/primitives';
-import { fmtRange, fmtStamp, relativeHours, TYPE_LABEL } from '@/lib/format';
+import { CheckCircle2, Circle, FilePlus2 } from 'lucide-react';
+import { Alert, Card, EmptyState, LinkButton, PageHeader, Stat, TableWrap } from '@/components/ui/primitives';
+import { fmtDay, fmtRange, fmtStamp, relativeHours, todayLocal, TYPE_LABEL } from '@/lib/format';
 import { getSettings, requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import type { LeaveType } from '@/lib/types';
@@ -19,7 +19,7 @@ export default async function OfficeHome() {
   const overdueBefore = new Date(Date.now() - s.escalate_hours * 36e5).toISOString();
   const count = { count: 'exact' as const, head: true };
 
-  const [waiting, overdue, toCheck, certDue, failed, queued, students, faculty, approvers, sessions, checkList, overdueList] = await Promise.all([
+  const [waiting, overdue, toCheck, certDue, failed, queued, students, faculty, approvers, sessions, checkList, overdueList, newFeedback, errors, delegations] = await Promise.all([
     supabase.from('leave_requests').select('id', count).eq('status', 'submitted'),
     supabase.from('leave_requests').select('id', count).eq('status', 'submitted').lt('submitted_at', overdueBefore),
     supabase.from('leave_requests').select('id', count).eq('status', 'documents_in'),
@@ -32,6 +32,10 @@ export default async function OfficeHome() {
     supabase.from('class_sessions').select('id', count).gte('starts_at', new Date().toISOString()),
     supabase.from('leave_requests').select(SELECT).eq('status', 'documents_in').order('doc_uploaded_at').limit(10),
     supabase.from('leave_requests').select(SELECT).eq('status', 'submitted').lt('submitted_at', overdueBefore).order('submitted_at').limit(10),
+    supabase.from('feedback').select('id', count).eq('status', 'new'),
+    supabase.from('app_errors').select('id', count).gte('created_at', new Date(Date.now() - 864e5).toISOString()),
+    supabase.from('approval_delegations').select('starts_on, ends_on, delegate:people!approval_delegations_delegate_id_fkey(full_name)')
+      .is('ended_at', null).lte('starts_on', todayLocal()).gte('ends_on', todayLocal()),
   ]);
 
   const n = (r: { count: number | null }) => r.count ?? 0;
@@ -44,10 +48,26 @@ export default async function OfficeHome() {
   const setupDone = setup.every((x) => x.done);
   const checks = (checkList.data ?? []) as unknown as Row[];
   const late = (overdueList.data ?? []) as unknown as Row[];
+  const away = (delegations.data ?? []) as unknown as { starts_on: string; ends_on: string; delegate: { full_name: string } | null }[];
 
   return (
     <>
-      <PageHeader title="Overview" description={`${s.programme_name} leave at a glance. Rules: ${s.notice_hours} h notice, ${s.ack_hours} h faculty window, certificates within ${s.doc_days} days.`} />
+      <PageHeader
+        title="Overview"
+        description={`${s.programme_name} leave at a glance. Rules: ${s.notice_hours} h notice, ${s.ack_hours} h faculty window, certificates within ${s.doc_days} days.`}
+        action={<LinkButton href="/office/leave/new" variant="secondary"><FilePlus2 className="h-4 w-4" />File leave for a student</LinkButton>}
+      />
+
+      {away.map((d) => (
+        <Alert key={d.delegate?.full_name} tone="info" className="mb-4" title={`${d.delegate?.full_name} is deciding for the Dean until ${fmtDay(d.ends_on)}`}>
+          The Dean’s emails and approval queue also go to them. <Link href="/away" className="font-semibold underline underline-offset-2">Manage</Link>
+        </Alert>
+      ))}
+      {(errors.count ?? 0) > 0 && (
+        <Alert tone="warn" className="mb-4" title={`${errors.count} error${errors.count === 1 ? '' : 's'} in the last 24 hours`}>
+          <Link href="/office/health" className="font-semibold underline underline-offset-2">Open System health</Link> to see what happened.
+        </Alert>
+      )}
 
       {!setupDone && (
         <Card className="mb-6" title="Finish setting up Leave Desk" description="Students can apply once the roster and timetable are in.">
@@ -63,13 +83,14 @@ export default async function OfficeHome() {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         <Stat label="Awaiting decision" value={n(waiting)} href="/office/leave?status=submitted" />
         <Stat label="Overdue decisions" value={n(overdue)} tone="bad" href="/office/leave?status=submitted" />
         <Stat label="Certificates to check" value={n(toCheck)} tone="warn" href="/office/leave?status=documents_in" />
         <Stat label="Certificates due" value={n(certDue)} href="/office/leave?status=sanctioned" />
         <Stat label="Emails waiting" value={n(queued)} href="/office/emails" />
         <Stat label="Emails failed" value={n(failed)} tone="bad" href="/office/emails?status=failed" />
+        <Stat label="New feedback" value={n(newFeedback)} tone="warn" href="/office/feedback" />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">

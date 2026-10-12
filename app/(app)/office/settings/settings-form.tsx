@@ -13,6 +13,14 @@ const RULES: { key: keyof Settings; label: string; hint: string; unit: string }[
   { key: 'escalate_hours', label: 'Reminder to the Dean after', hint: 'The approver and the Dean HRM Office are emailed.', unit: 'hours' },
   { key: 'doc_days', label: 'Medical certificate deadline', hint: 'Days after resuming classes. Missing it cancels the leave.', unit: 'days' },
   { key: 'max_leave_days', label: 'Longest leave students can apply for here', hint: 'Longer leave is handled by the Dean HRM Office directly.', unit: 'days' },
+  { key: 'link_days', label: 'Faculty email links work for', hint: 'After this a link shows nothing about the request. Faculty can always sign in instead.', unit: 'days' },
+];
+
+const TARGETS: { key: keyof Settings; label: string; unit: string; step?: number; max: number; min: number }[] = [
+  { key: 'target_decision_pct', label: 'Requests decided within the reminder time', unit: '%', min: 0, max: 100 },
+  { key: 'target_ack_pct', label: 'Faculty replying within their window', unit: '%', min: 0, max: 100 },
+  { key: 'target_cert_pct', label: 'Medical certificates uploaded on time', unit: '%', min: 0, max: 100 },
+  { key: 'target_satisfaction', label: 'Average satisfaction in the survey', unit: 'out of 5', step: 0.1, min: 1, max: 5 },
 ];
 
 export function SettingsForm({ settings }: { settings: Settings }) {
@@ -24,7 +32,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
           {RULES.map((r) => (
             <Field key={r.key} label={r.label} htmlFor={r.key} hint={r.hint}>
               <div className="flex items-center gap-2">
-                <input id={r.key} name={r.key} type="number" min={0} max={720} step={1} required defaultValue={settings[r.key] as number} className="field-input w-28 tabular-nums" />
+                <input id={r.key} name={r.key} type="number" inputMode="numeric" min={r.key === 'link_days' ? 1 : 0} max={r.key === 'link_days' ? 30 : 720} step={1} required defaultValue={settings[r.key] as number} className="field-input w-28 tabular-nums" />
                 <span className="text-sm text-ink-muted">{r.unit}</span>
               </div>
             </Field>
@@ -48,6 +56,42 @@ export function SettingsForm({ settings }: { settings: Settings }) {
           </Field>
         </div>
       </Card>
+
+      <Card title="Help page contact" description="Shown on the public Help and rules page that every email links to.">
+        <div className="grid grid-cols-1 gap-5 px-5 py-5 sm:grid-cols-3">
+          <Field label="Name or desk" htmlFor="help_contact_name">
+            <input id="help_contact_name" name="help_contact_name" maxLength={120} defaultValue={settings.help_contact_name ?? ''} className="field-input" placeholder="Dean HRM Office" />
+          </Field>
+          <Field label="Email" htmlFor="help_contact_email">
+            <input id="help_contact_email" name="help_contact_email" type="email" maxLength={200} defaultValue={settings.help_contact_email ?? ''} className="field-input" placeholder="hrm.office@college.edu" />
+          </Field>
+          <Field label="Phone" htmlFor="help_contact_phone">
+            <input id="help_contact_phone" name="help_contact_phone" type="tel" maxLength={40} defaultValue={settings.help_contact_phone ?? ''} className="field-input" />
+          </Field>
+        </div>
+      </Card>
+
+      <div id="survey" className="scroll-mt-6">
+        <Card title="Pilot targets and survey" description="The targets in the proposal. Pilot results compares the real figures with these.">
+          <div className="grid grid-cols-1 gap-x-6 gap-y-5 px-5 py-5 sm:grid-cols-2">
+            {TARGETS.map((t) => (
+              <Field key={t.key} label={t.label} htmlFor={t.key}>
+                <div className="flex items-center gap-2">
+                  <input id={t.key} name={t.key} type="number" inputMode="decimal" min={t.min} max={t.max} step={t.step ?? 1} required defaultValue={settings[t.key] as number} className="field-input w-28 tabular-nums" />
+                  <span className="text-sm text-ink-muted">{t.unit}</span>
+                </div>
+              </Field>
+            ))}
+          </div>
+          <label className="flex items-start gap-3 border-t border-line px-5 py-4 text-sm">
+            <input type="checkbox" name="survey_open" defaultChecked={settings.survey_open} className="mt-0.5 h-4 w-4 accent-navy-700" />
+            <span>
+              <span className="font-semibold text-ink">Survey is open</span><br />
+              <span className="text-ink-muted">Everyone who has not answered sees a short banner asking two questions. Open it in the last week of the pilot.</span>
+            </span>
+          </label>
+        </Card>
+      </div>
 
       <div className="flex flex-wrap items-center gap-4">
         <SubmitButton pendingText="Saving…">Save changes</SubmitButton>

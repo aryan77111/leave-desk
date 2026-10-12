@@ -69,6 +69,20 @@ export default async function FacultyHome() {
         {away.length === 0 ? (
           <EmptyState title="No students on leave in your sessions" />
         ) : (
+          <>
+          <ul className="divide-y divide-line md:hidden">
+            {away.map((a) => (
+              <li key={a.ref + a.starts_at} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-sm font-semibold text-ink">{a.student_name}</span>
+                  <StatusBadge status={a.status} />
+                </div>
+                <div className="mt-0.5 text-xs text-ink-muted">{a.student_no} · {a.batch} {a.section}</div>
+                <div className="mt-1 text-sm text-ink-soft"><span className="font-semibold text-ink">{a.course_code}</span> · {fmtDay(localDate(a.starts_at))}, {fmtTime(a.starts_at)}</div>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden md:block">
           <TableWrap>
             <table className="data-table">
               <thead><tr><th>Session</th><th>Class</th><th>Student</th><th>Leave</th></tr></thead>
@@ -84,6 +98,8 @@ export default async function FacultyHome() {
               </tbody>
             </table>
           </TableWrap>
+          </div>
+          </>
         )}
         {away.length > 0 && <p className="border-t border-line px-5 py-3 text-xs text-ink-muted">{plural(away.length, 'absence')} in your sessions.</p>}
       </Card>

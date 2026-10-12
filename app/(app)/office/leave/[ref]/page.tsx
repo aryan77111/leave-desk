@@ -3,19 +3,23 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ExternalLink } from 'lucide-react';
 import { LeaveDetail } from '@/components/leave/leave-detail';
-import { Card, PageHeader } from '@/components/ui/primitives';
+import { Alert, Card, LinkButton, PageHeader } from '@/components/ui/primitives';
 import { fmtStamp, TYPE_LABEL } from '@/lib/format';
 import { getConcerns, getEvents, getLeaveByRef } from '@/lib/leave';
 import { requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { CancelForm } from './cancel-form';
 import { ReviewForm } from './review-form';
 
 export async function generateMetadata({ params }: { params: Promise<{ ref: string }> }): Promise<Metadata> {
   return { title: (await params).ref };
 }
 
-export default async function OfficeLeaveDetail({ params }: { params: Promise<{ ref: string }> }) {
+export default async function OfficeLeaveDetail({ params, searchParams }: {
+  params: Promise<{ ref: string }>; searchParams: Promise<{ filed?: string; corrected?: string }>;
+}) {
   const { ref } = await params;
+  const { filed, corrected } = await searchParams;
   await requireViewer('office');
   const supabase = await createClient();
   const leave = await getLeaveByRef(supabase, ref);
@@ -45,6 +49,14 @@ export default async function OfficeLeaveDetail({ params }: { params: Promise<{ 
           </div>
         </Card>
       )}
+      {['submitted', 'sanctioned', 'documents_in', 'approved'].includes(leave.status) && (
+        <Card title="Correct or cancel" description="For mistakes. Every change is on the history with your reason.">
+          <div className="flex flex-col gap-3 px-5 py-4">
+            <LinkButton href={`/office/leave/${leave.ref}/correct`} variant="secondary" className="self-start">Correct dates and sessions</LinkButton>
+            <CancelForm leaveId={leave.id} leaveRef={leave.ref} />
+          </div>
+        </Card>
+      )}
       {leave.student && (
         <Card title="Student">
           <div className="px-5 py-4 text-sm">
@@ -65,6 +77,8 @@ export default async function OfficeLeaveDetail({ params }: { params: Promise<{ 
         title={`${leave.student?.full_name}: ${TYPE_LABEL[leave.type].toLowerCase()} leave`}
         description={leave.ref}
       />
+      {filed && <Alert tone="ok" className="mb-6" title="Request filed">The Dean has the request, faculty have been emailed and the student has been told.</Alert>}
+      {corrected && <Alert tone="ok" className="mb-6" title="Correction saved">The student has been emailed, and faculty whose sessions changed have been told.</Alert>}
       <LeaveDetail leave={leave} events={events} concerns={concerns} audience="staff" aside={aside} />
     </>
   );

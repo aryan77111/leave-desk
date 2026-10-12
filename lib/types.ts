@@ -32,6 +32,15 @@ export type Settings = {
   allowed_domains: string[];
   app_url: string | null;
   email_from: string | null;
+  link_days: number;
+  survey_open: boolean;
+  help_contact_name: string | null;
+  help_contact_email: string | null;
+  help_contact_phone: string | null;
+  target_decision_pct: number;
+  target_ack_pct: number;
+  target_cert_pct: number;
+  target_satisfaction: number;
   updated_at: string;
 };
 
@@ -71,6 +80,11 @@ export type LeaveRequest = {
   doc_checked_at: string | null;
   escalated_at: string | null;
   closed_at: string | null;
+  filed_by: string | null;
+  office_note: string | null;
+  edited_at: string | null;
+  decided_by_delegate: boolean;
+  cancel_reason: string | null;
 };
 
 export type LeaveEvent = {
@@ -78,7 +92,11 @@ export type LeaveEvent = {
   kind: string;
   message: string;
   created_at: string;
+  visible_to_student?: boolean;
+  actor?: { full_name: string } | null;
 };
+
+export type Delegation = { id: string; starts_on: string; ends_on: string; active: boolean };
 
 export type InboxItem = {
   leave_id: string;

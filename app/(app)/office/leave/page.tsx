@@ -59,7 +59,8 @@ export default async function AllLeave({ searchParams }: {
 
   return (
     <>
-      <PageHeader title="All leave" description="Every request, newest first. Filter by status, type, dates or student." />
+      <PageHeader title="All leave" description="Every request, newest first. Filter by status, type, dates or student."
+        action={<LinkButton href="/office/leave/new" variant="secondary">File leave for a student</LinkButton>} />
       <Card>
         <form className="grid grid-cols-1 gap-3 border-b border-line px-5 py-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))_auto]" role="search">
           <label className="flex flex-col gap-1"><span className="label-caps">Student or request</span>
@@ -86,6 +87,23 @@ export default async function AllLeave({ searchParams }: {
         {rows.length === 0 ? (
           <EmptyState title="No requests match these filters" />
         ) : (
+          <>
+            <ul className="divide-y divide-line md:hidden">
+              {rows.map((r) => (
+                <li key={r.id}>
+                  <Link href={`/office/leave/${r.ref}`} className="block px-4 py-3.5 hover:bg-navy-50/50">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-sm font-semibold text-navy-700">{r.student?.full_name}</span>
+                      <StatusBadge status={r.status} />
+                    </div>
+                    <div className="mt-0.5 text-xs text-ink-muted">{r.student?.student_no} · {r.student?.batch} {r.student?.section} · {r.ref}</div>
+                    <div className="mt-1 text-sm text-ink">{fmtRange(r.from_date, r.to_date)} <span className="text-ink-muted">· {TYPE_LABEL[r.type]} · {r.leave_sessions.length} sessions</span></div>
+                    {r.status === 'sanctioned' && r.doc_deadline && <div className="mt-0.5 text-xs text-ink-muted">Certificate due {fmtStamp(r.doc_deadline)}</div>}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block">
           <TableWrap>
             <table className="data-table">
               <thead><tr><th>Request</th><th>Student</th><th>Leave</th><th>Sessions</th><th>Status</th></tr></thead>
@@ -102,6 +120,8 @@ export default async function AllLeave({ searchParams }: {
               </tbody>
             </table>
           </TableWrap>
+            </div>
+          </>
         )}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3 text-sm text-ink-muted">
           <span>{total} request{total === 1 ? '' : 's'}{pages > 1 ? ` · page ${page} of ${pages}` : ''}</span>

@@ -28,6 +28,7 @@ function html(m: Mail, appUrl: string | null, programme: string) {
   const href = m.link && appUrl ? new URL(m.link, appUrl).toString() : null;
   const greeting = m.to_name ? `Dear ${esc(m.to_name)},` : "Hello,";
   const body = esc(m.body).replace(/\n/g, "<br>");
+  const helpHref = appUrl ? new URL("/help", appUrl).toString() : null;
   const button = href
     ? `<p style="margin:24px 0"><a href="${esc(href)}" style="background:#003C6F;color:#ffffff;text-decoration:none;padding:11px 18px;border-radius:4px;font-weight:600;display:inline-block">${esc(m.link_label ?? "Open Leave Desk")}</a></p>
        <p style="color:#5B6676;font-size:12px">If the button does not work, copy this link: ${esc(href)}</p>`
@@ -41,13 +42,14 @@ function html(m: Mail, appUrl: string | null, programme: string) {
       <p style="margin:0">${body}</p>
       ${button}
     </td></tr>
-    <tr><td style="padding:12px 20px;border-top:1px solid #D9E0E8;color:#5B6676;font-size:12px">Sent automatically by Leave Desk. Replies to this address are not monitored.</td></tr>
+    <tr><td style="padding:12px 20px;border-top:1px solid #D9E0E8;color:#5B6676;font-size:12px">Sent automatically by Leave Desk. Replies to this address are not monitored.${helpHref ? ` Questions? See <a href="${esc(helpHref)}" style="color:#003C6F">Help and rules</a>.` : ""}</td></tr>
   </table></td></tr></table></body></html>`;
 }
 
 function text(m: Mail, appUrl: string | null) {
   const href = m.link && appUrl ? new URL(m.link, appUrl).toString() : null;
-  return `${m.to_name ? `Dear ${m.to_name},\n\n` : ""}${m.body}${href ? `\n\n${m.link_label ?? "Open Leave Desk"}: ${href}` : ""}\n\n— Leave Desk`;
+  const help = appUrl ? `\nHelp and rules: ${new URL("/help", appUrl).toString()}` : "";
+  return `${m.to_name ? `Dear ${m.to_name},\n\n` : ""}${m.body}${href ? `\n\n${m.link_label ?? "Open Leave Desk"}: ${href}` : ""}\n\n— Leave Desk${help}`;
 }
 
 Deno.serve(async (req) => {

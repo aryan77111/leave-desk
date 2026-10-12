@@ -35,7 +35,7 @@ grant usage on schema storage to anon, authenticated;
 grant select, insert on storage.objects to authenticated;
 `;
 await db.exec(stub);
-for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql', '20261012000010_timetable_sync.sql', '20261012000012_term_sheets.sql']) {
+for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql', '20261012000010_timetable_sync.sql', '20261012000012_term_sheets.sql', '20261012000014_pilot_schema.sql', '20261012000015_pilot_access.sql', '20261012000016_pilot_leave_flow.sql', '20261012000017_pilot_reporting.sql']) {
   try { await db.exec(readFileSync(new URL(f, MIG), 'utf8')); console.log('applied', f); }
   catch (e) { console.error('FAILED applying', f, '\n', e.message); process.exit(1); }
 }
@@ -189,7 +189,7 @@ await throwsLike(() => as(U.aryan, () => db.query(`select public.respond_to_leav
 console.log('\nDecisions');
 ok((await db.query(`select approver_level from people where 'approver' = any (roles)`)).rows.every(r => r.approver_level === 'dean'), 'imported approvers (including role "dean" and a former chair) all have Dean access');
 ok((await one(`select public.route_level('official', current_date, current_date + 10) as l`)).l === 'dean', 'long official leave also goes to the Dean');
-await throwsLike(() => as(U.meera, () => db.query(`select public.decide_leave($1, true)`, [medRow.id])), /Only the Dean can decide/, 'faculty cannot decide');
+await throwsLike(() => as(U.meera, () => db.query(`select public.decide_leave($1, true)`, [medRow.id])), /Only the Dean can decide leave, or a colleague/, 'faculty cannot decide');
 await throwsLike(() => as(U.chair, () => db.query(`select public.decide_leave($1, false, '  ')`, [medRow.id])), /explaining the rejection/, 'rejection needs a note');
 const d1 = await as(U.chair, () => one(`select public.decide_leave($1, true) as s`, [medRow.id]));
 ok(d1.s === 'sanctioned', 'medical leave sanctioned provisionally');
@@ -234,6 +234,7 @@ console.log('\nScheduled jobs');
 const sick = await as(U.priya, () => one(`select public.submit_leave('medical', 'Migraine', $1::date, $1::date, $2::uuid[], false, null, null, null, true) as ref`, [today, todayIds]));
 const sickRow = await one(`select id from leave_requests where ref = $1`, [sick.ref]);
 await db.query(`update leave_requests set submitted_at = now() - interval '49 hours' where id = $1`, [sickRow.id]);
+await db.query(`update faculty_acks set notified_at = now() - interval '49 hours' where leave_id = $1`, [sickRow.id]);
 await db.query(`set role service_role`);
 const j1 = (await one(`select public.run_scheduled_jobs() as j`)).j;
 await db.query(`reset role`);
@@ -408,6 +409,138 @@ await throwsLike(() => as(U.office, () => db.query(`delete from timetable_change
 await as(U.office, () => db.query(`update timetable_sheets set enabled = false where id = $1`, [sheetB]));
 ok((await one(`select enabled from timetable_sheets where id = $1`, [sheetB])).enabled === false, 'office can pause a sheet');
 await throwsLike(() => as(U.aryan, () => db.query(`insert into sheet_course_codes (sheet_id, course_code, course_name, faculty_id, sections) values ($2, 'HACK', 'x', $1, '{A}')`, [F.meera, sheetB])), /row-level security/, 'students cannot add course codes');
+
+
+// Pilot features ------------------------------------------------------------------
+console.log('\nOne-time links');
+const ackRow = await one(`select token_expires_at, notified_at from faculty_acks order by notified_at desc limit 1`);
+const days = (new Date(ackRow.token_expires_at) - new Date(ackRow.notified_at)) / 864e5;
+ok(days > 6.9 && days < 7.1, `links expire after the configured ${Math.round(days)} days`);
+const expLink = (await one(`select link from email_outbox where kind = 'faculty_notice' and link is not null order by id desc limit 1`)).link;
+const expToken = expLink.split('/r/')[1];
+await db.query(`update faculty_acks set token_expires_at = now() - interval '1 minute' where token_hash = encode(extensions.digest($1, 'sha256'), 'hex')`, [expToken]);
+const expCtx = (await asAnon(() => one(`select public.token_context($1) as c`, [expToken]))).c;
+ok(expCtx.state === 'expired' && !expCtx.student_name && !expCtx.sessions, 'an expired link shows nothing about the request');
+await throwsLike(() => asAnon(() => db.query(`select public.respond_by_token($1, 'acknowledge')`, [expToken])), /expired/, 'an expired link cannot be used');
+
+console.log('\nStudent changes a request');
+const s10 = async (code) => (await one(`select id, faculty_id from class_sessions where course_code = $1 and section = 'A' and batch = '2025-27' and public.local_date(starts_at) = $2`, [code, day(10)]));
+const inhrm10 = await s10('INHRM'), picm10 = await s10('PICM');
+const pe = await as(U.priya, () => one(`select public.submit_leave('official', 'Case competition', $1::date, $1::date, $2::uuid[]) as ref`, [day(10), [inhrm10.id]]));
+const peRow = await one(`select id from leave_requests where ref = $1`, [pe.ref]);
+const mark = (await one(`select max(id)::int m from email_outbox`)).m;
+await throwsLike(() => as(U.aryan, () => db.query(`select public.edit_leave($1, 'x reason', $2::date, $2::date, '{}')`, [peRow.id, day(10)])), /not found/, 'another student cannot change the request');
+await throwsLike(() => as(U.priya, () => db.query(`select public.edit_leave($1, 'Case competition', $2::date, $2::date, $3::uuid[])`, [peRow.id, day(10), [inhrm10.id]])), /Nothing has changed/, 'saving without changes is refused');
+await as(U.priya, () => db.query(`select public.edit_leave($1, 'National case competition final', $2::date, $2::date, $3::uuid[])`, [peRow.id, day(10), [inhrm10.id, picm10.id]]));
+const em1 = (await db.query(`select kind, to_email from email_outbox where id > $1`, [mark])).rows;
+ok(em1.some(m => m.kind === 'faculty_notice' && m.to_email === 'sanjay@college.edu'), 'faculty newly affected by the change get a notice');
+ok(!em1.some(m => m.kind === 'faculty_notice' && m.to_email === 'meera@college.edu'), 'faculty whose sessions did not change are not emailed again');
+ok(em1.some(m => m.kind === 'approver_changed'), 'the Dean is told about the change');
+const edEv = await one(`select message from leave_events where leave_id = $1 and kind = 'edited'`, [peRow.id]);
+ok(/sessions 1 → 2/.test(edEv.message) && /reason updated/.test(edEv.message), `history records what changed (${edEv.message})`);
+const mark2 = (await one(`select max(id)::int m from email_outbox`)).m;
+await as(U.priya, () => db.query(`select public.edit_leave($1, 'National case competition final', $2::date, $2::date, $3::uuid[])`, [peRow.id, day(10), [picm10.id]]));
+ok((await one(`select count(*)::int n from faculty_acks where leave_id = $1 and faculty_id = $2`, [peRow.id, inhrm10.faculty_id])).n === 0, 'faculty no longer affected are taken off the request');
+ok((await db.query(`select 1 from email_outbox where id > $1 and kind = 'faculty_released' and to_email = 'meera@college.edu'`, [mark2])).rows.length === 1, 'and told no response is needed');
+
+console.log('\nDean delegation');
+await throwsLike(() => as(U.aryan, () => db.query(`select public.set_delegation($1, $2::date, $3::date)`, [F.sanjay, today, day(3)])), /Only the Dean or the Dean HRM Office/, 'students cannot name a delegate');
+await throwsLike(() => as(U.dean, () => db.query(`select public.set_delegation($1, $2::date, $3::date)`, [F.sanjay, day(-1), day(3)])), /cannot be in the past/, 'delegation cannot start in the past');
+await throwsLike(() => as(U.dean, () => db.query(`select public.set_delegation($1, $2::date, $3::date)`, [F.meera, today, day(3)])), /already has Dean access/, 'someone with Dean access does not need a delegation');
+const aryanId = (await one(`select id from people where email = 'aryan@stu.college.edu'`)).id;
+await throwsLike(() => as(U.dean, () => db.query(`select public.set_delegation($1, $2::date, $3::date)`, [aryanId, today, day(3)])), /active faculty member/, 'a student cannot be named');
+await throwsLike(() => as(U.sanjay, () => db.query(`select public.decide_leave($1, true)`, [peRow.id])), /Only the Dean can decide/, 'faculty cannot decide before being named');
+const delId = (await as(U.dean, () => one(`select public.set_delegation($1, $2::date, $3::date, 'Dean at a conference') as id`, [F.sanjay, today, day(3)]))).id;
+ok((await db.query(`select 1 from email_outbox where kind = 'delegation_set' and to_email = 'sanjay@college.edu'`)).rows.length === 1, 'the delegate is emailed');
+await throwsLike(() => as(U.dean, () => db.query(`select public.set_delegation($1, $2::date, $3::date)`, [F.sanjay, day(2), day(5)])), /already named/, 'overlapping delegation for the same person refused');
+ok((await as(U.sanjay, () => one(`select public.can_decide() as c, public.my_delegation() as d`))).c === true, 'the delegate can decide during the dates');
+ok((await as(U.sanjay, () => db.query(`select id from leave_requests where id = $1`, [peRow.id]))).rows.length === 1, 'the delegate can read requests like the Dean');
+const ds = await as(U.sanjay, () => one(`select public.decide_leave($1, true) as s`, [peRow.id]));
+const peAfter = await one(`select status, decided_by_delegate from leave_requests where id = $1`, [peRow.id]);
+ok(ds.s === 'approved' && peAfter.decided_by_delegate === true, 'delegate decision recorded as a delegate decision');
+ok(/on behalf of the Dean/.test((await one(`select message from leave_events where leave_id = $1 and kind = 'approved'`, [peRow.id])).message), 'history says "on behalf of the Dean"');
+await throwsLike(() => as(U.priya, () => db.query(`select public.edit_leave($1, 'Changed again', $2::date, $2::date, '{}')`, [peRow.id, day(10)])), /Only requests waiting/, 'a decided request cannot be changed by the student');
+
+const fresh = await as(U.priya, () => one(`select public.submit_leave('family', 'Cousin''s wedding', $1::date, $1::date, '{}') as ref`, [day(12)]));
+ok((await db.query(`select 1 from email_outbox e join leave_requests r on r.id = e.leave_id where r.ref = $1 and e.kind = 'approver_new' and e.to_email = 'sanjay@college.edu'`, [fresh.ref])).rows.length === 1, 'new requests are emailed to the delegate too');
+await as(U.dean, () => db.query(`select public.end_delegation($1)`, [delId]));
+ok((await as(U.sanjay, () => one(`select public.can_decide() as c`))).c === false, 'ending the delegation takes the access away');
+ok((await as(U.sanjay, () => db.query(`select id from leave_requests`))).rows.length === 0, 'and the delegate can no longer read requests');
+
+console.log('\nDean HRM Office files, corrects and cancels');
+await throwsLike(() => as(U.aryan, () => db.query(`select public.office_file_leave($1, 'medical', 'Hospital', $2::date, $3::date, '{}', false, null, null, null, 'note')`, [aryanId, day(-5), day(-4)])), /Only the Dean HRM Office/, 'students cannot file for others');
+await throwsLike(() => as(U.office, () => db.query(`select public.office_file_leave($1, 'medical', 'Hospital', $2::date, $3::date, '{}')`, [aryanId, day(-5), day(-4)])), /Say why the office is filing/, 'office must say why it is filing');
+const of = await as(U.office, () => one(`select public.office_file_leave($1, 'medical', 'Admitted to hospital with dengue', $2::date, $3::date, '{}', false, null, null, null, 'Father called the office on Monday') as ref`, [aryanId, day(-5), day(-4)]));
+const ofRow = await one(`select * from leave_requests where ref = $1`, [of.ref]);
+ok(ofRow.filed_by !== null && ofRow.status === 'submitted', `backdated medical leave filed by the office (${of.ref}), goes to the Dean`);
+ok((await db.query(`select 1 from email_outbox where leave_id = $1 and kind = 'student_receipt' and subject like '%filed for you'`, [ofRow.id])).rows.length === 1, 'the student is told the office filed it');
+const stuEvents = await as(U.aryan, () => db.query(`select kind from leave_events where leave_id = $1`, [ofRow.id]));
+ok(stuEvents.rows.some(e => e.kind === 'submitted') && !stuEvents.rows.some(e => e.kind === 'office_note'), 'the student sees the filing but not the internal office note');
+await throwsLike(() => as(U.office, () => db.query(`select public.office_file_leave($1, 'family', 'Again', $2::date, $2::date, '{}', false, null, null, null, 'duplicate')`, [aryanId, day(-4)])), /already has leave/, 'office filing still refuses overlaps');
+await throwsLike(() => as(U.office, () => db.query(`select public.office_amend_leave($1, $2::date, $3::date, '{}', 'x')`, [ofRow.id, day(-5), day(-3)])), /Say why/, 'a correction needs a reason');
+await as(U.office, () => db.query(`select public.office_amend_leave($1, $2::date, $3::date, '{}', 'Discharged a day later')`, [ofRow.id, day(-5), day(-3)]));
+ok((await one(`select to_date::text t from leave_requests where id = $1`, [ofRow.id])).t === day(-3), 'office corrects the dates');
+ok(/Corrected by the Dean HRM Office/.test((await one(`select message from leave_events where leave_id = $1 and kind = 'corrected'`, [ofRow.id])).message), 'correction is on the history with the reason');
+await throwsLike(() => as(U.office, () => db.query(`select public.office_amend_leave($1, $2::date, $3::date, '{}', 'Same again')`, [ofRow.id, day(-5), day(-3)])), /Nothing has changed/, 'a correction must change something');
+await as(U.office, () => db.query(`select public.office_cancel_leave($1, 'Filed for the wrong student')`, [ofRow.id]));
+const ofC = await one(`select status, cancel_reason from leave_requests where id = $1`, [ofRow.id]);
+ok(ofC.status === 'cancelled' && ofC.cancel_reason === 'Filed for the wrong student', 'office cancels a mistaken request with a reason');
+await throwsLike(() => as(U.office, () => db.query(`select public.office_cancel_leave($1, 'again')`, [ofRow.id])), /already closed/, 'cannot cancel twice');
+
+console.log('\nBulk approval');
+const b1 = await as(U.aryan, () => one(`select public.submit_leave('official', 'Conference day 1', $1::date, $1::date, '{}') as ref`, [day(20)]));
+const b2 = await as(U.aryan, () => one(`select public.submit_leave('official', 'Conference day 2', $1::date, $1::date, '{}') as ref`, [day(21)]));
+const bid = async (r) => (await one(`select id from leave_requests where ref = $1`, [r])).id;
+const [b1id, b2id, frId] = [await bid(b1.ref), await bid(b2.ref), await bid(fresh.ref)];
+await db.query(`insert into ack_concerns (leave_id, faculty_id, concern) values ($1, $2, 'Exam that day')`, [b2id, F.meera]);
+await throwsLike(() => as(U.aryan, () => db.query(`select public.decide_leaves_bulk($1::uuid[])`, [[b1id]])), /Only the Dean can decide/, 'students cannot bulk approve');
+const bulk = (await as(U.dean, () => one(`select public.decide_leaves_bulk($1::uuid[], 'Approved together') as r`, [[b1id, b2id, frId]]))).r;
+ok(bulk.decided === 2 && bulk.skipped.length === 1 && bulk.skipped[0].ref === b2.ref, `bulk approval decides ${bulk.decided} and skips the one with a concern`);
+ok((await one(`select status from leave_requests where id = $1`, [b2id])).status === 'submitted', 'the request with a concern stays for the Dean to read');
+
+console.log('\nFeedback and survey');
+await throwsLike(() => asAnon(() => db.query(`select public.submit_feedback('problem', 'Broken')`)), /permission denied|Sign in/, 'feedback needs sign-in');
+await as(U.aryan, () => db.query(`select public.submit_feedback('problem', 'The upload button does nothing on my phone', '/student/leave/LV-1001', 'iPhone')`));
+await as(U.priya, () => db.query(`select public.submit_feedback('suggestion', 'Add WhatsApp reminders')`));
+ok((await db.query(`select 1 from email_outbox where kind = 'office_feedback'`)).rows.length === 1, 'a reported problem is emailed to the office; suggestions are not');
+ok((await as(U.aryan, () => db.query(`select * from feedback`))).rows.length === 1, 'people see only their own feedback');
+ok((await as(U.office, () => db.query(`select * from feedback`))).rows.length === 2, 'the office sees all feedback');
+const fbId = (await one(`select id from feedback where kind = 'problem'`)).id;
+await as(U.office, () => db.query(`select public.set_feedback_status($1, 'done', 'Fixed in the next release')`, [fbId]));
+ok((await one(`select status from feedback where id = $1`, [fbId])).status === 'done', 'the office marks feedback as done');
+await throwsLike(() => as(U.aryan, () => db.query(`select public.submit_survey(5, 5)`)), /survey is not open/, 'the survey is closed until the office opens it');
+await as(U.office, () => db.query(`update settings set survey_open = true where id = 1`));
+await throwsLike(() => as(U.aryan, () => db.query(`select public.submit_survey(6, 5)`)), /1 to 5/, 'ratings must be 1 to 5');
+await as(U.aryan, () => db.query(`select public.submit_survey(3, 5, true, 'Much quicker')`));
+await as(U.aryan, () => db.query(`select public.submit_survey(4, 5, true, 'Much quicker')`));
+await as(U.meera, () => db.query(`select public.submit_survey(5, 4, true)`));
+ok((await one(`select count(*)::int n from survey_responses`)).n === 2, 'answering again updates the answer');
+
+console.log('\nPilot metrics');
+await throwsLike(() => as(U.aryan, () => db.query(`select public.pilot_metrics($1::date, $2::date)`, [day(-30), day(1)])), /Only the Dean and the Dean HRM Office/, 'students cannot see pilot results');
+const pm = (await as(U.office, () => one(`select public.pilot_metrics($1::date, $2::date) as m`, [day(-30), day(1)]))).m;
+ok(pm.requests.total > 5 && pm.decision.decided > 0 && pm.decision.pct !== null, `decision timing measured (${pm.decision.pct}% of ${pm.decision.decided + pm.decision.open_late} within ${pm.decision.window_hours} h)`);
+ok(pm.ack.total > 0 && pm.ack.pct !== null && pm.ack.deemed >= 2, `faculty responses measured (${pm.ack.pct}% in time, ${pm.ack.deemed} deemed)`);
+ok(pm.certificates.on_time === 1 && pm.certificates.missed === 1 && pm.certificates.pct === 50, `certificates on time measured (${pm.certificates.on_time} on time, ${pm.certificates.missed} missed)`);
+ok(Number(pm.survey.satisfaction) === 4.5 && pm.survey.answered === 2, `satisfaction averaged (${pm.survey.satisfaction} from ${pm.survey.answered})`);
+ok(pm.online.by_office === 1 && pm.decision.by_delegate === 1, 'office filings and delegate decisions counted');
+const pmb = (await as(U.dean, () => one(`select public.pilot_metrics($1::date, $2::date, '1999-01') as m`, [day(-30), day(1)]))).m;
+ok(pmb.requests.total === 0 && pmb.decision.pct === null, 'the Dean can filter by batch; empty batch gives no percentages');
+const rowsCsv = await as(U.office, () => db.query(`select * from public.pilot_metrics_rows($1::date, $2::date)`, [day(-30), day(1)]));
+ok(rowsCsv.rows.length === pm.requests.total && rowsCsv.rows.some(r => r.certificate_on_time === true), `per-request rows for the CSV (${rowsCsv.rows.length})`);
+
+console.log('\nMonitoring and help');
+await asAnon(() => db.query(`select public.log_app_error('client', 'TypeError: x is undefined', '/student/new', 'abc')`));
+await as(U.aryan, () => db.query(`select public.log_app_error('server', 'Database timeout', '/approve')`));
+ok((await as(U.office, () => db.query(`select * from app_errors`))).rows.length === 2, 'errors are recorded and the office can read them');
+ok((await as(U.aryan, () => db.query(`select * from app_errors`))).rows.length === 0, 'students cannot read the error log');
+const jm = (await one(`select public.run_scheduled_jobs() as j`)).j;
+ok(jm.error_alerts === 1 && (await db.query(`select 1 from email_outbox where kind = 'office_errors'`)).rows.length >= 1, 'the office is emailed about new errors');
+await as(U.aryan, () => db.query(`select public.log_app_error('client', 'Another one')`));
+ok((await one(`select public.run_scheduled_jobs() as j`)).j.error_alerts === 0, 'at most one error alert per hour');
+ok((await as(U.office, () => db.query(`select last_run_at from job_runs where name = 'scheduled_jobs'`))).rows.length === 1, 'the last job run is recorded for System health');
+const help = (await asAnon(() => one(`select public.public_help() as h`))).h;
+ok(help.ack_hours === 48 && help.link_days === 7, 'the help page reads the rules without signing in');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
