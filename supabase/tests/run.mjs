@@ -315,12 +315,12 @@ const base = [
   S(day(31), '09:45', 'TAMA', F.meera), S(day(31), '09:45', 'TAMA', F.meera, 'B'),
   S(day(40), '09:45', 'TAMA', F.meera), S(day(40), '09:45', 'TAMA', F.meera, 'B'),
 ];
-const apply = (rows, prot = [], force = false) => one(`select public.apply_timetable('2025-27', $1::jsonb, $2::jsonb, $3, 'h', '{}'::jsonb) as r`, [JSON.stringify(rows), JSON.stringify(prot), force]).then(x => x.r);
+const apply = (rows, prot = [], force = false) => one(`select public.apply_timetable('2025-27', $1::jsonb, $2::jsonb, $3) as r`, [JSON.stringify(rows), JSON.stringify(prot), force]).then(x => x.r);
 let r1 = await apply(base);
 ok(r1.status === 'ok' && r1.added === 8, `first sync adds ${r1.added} sessions`);
 r1 = await apply(base);
 ok(r1.added + r1.changed + r1.cancelled === 0, 'syncing the same sheet again changes nothing');
-ok((await one(`select last_message from timetable_sources where batch = '2025-27'`)).last_message.startsWith('Up to date'), 'source shows up to date');
+await throwsLike(() => as(U.office, () => db.query(`select public.timetable_mark_removed()`)), /only the timetable sync/, 'office cannot call the sync steps directly');
 await throwsLike(() => as(U.aryan, () => apply(base)), /permission denied/, 'students cannot call the sync');
 
 const sess = async (code, d, t, sec = 'A') => (await one(`select id, cancelled, faculty_id from class_sessions where batch = '2025-27' and section = $4 and course_code = $1 and public.local_date(starts_at) = $2 and to_char(starts_at at time zone 'Asia/Kolkata', 'HH24:MI') = $3`, [code, d, t, sec]));
@@ -373,7 +373,6 @@ await apply([...missing, ...many], [{ date: day(31), start: '16:15' }]);
 const blocked = await apply([]);
 ok(blocked.status === 'blocked' && blocked.would_cancel > 60, `empty sheet is refused (would cancel ${blocked.would_cancel})`);
 ok((await one(`select count(*)::int n from class_sessions where batch = '2025-27' and source = 'sheet' and not cancelled and starts_at > now()`)).n > 60, 'nothing was cancelled');
-ok((await one(`select last_status from timetable_sources where batch = '2025-27'`)).last_status === 'blocked', 'source shows the stop');
 const forced = await apply([], [], true);
 ok(forced.status === 'ok' && forced.cancelled === blocked.would_cancel, 'Sync anyway applies it');
 ok((await one(`select cancelled from class_sessions where course_code = 'OLD'`)).cancelled === false, 'past sessions are never touched');
@@ -384,6 +383,7 @@ ok(studentSees.rows.length === 0, 'students cannot see the sheet settings');
 await as(U.office, () => db.query(`insert into course_codes (batch, course_code, variant, course_name, faculty_id, sections) values ('2025-27', 'TAMA', 'A', 'Talent Management', $1, '{A}')`, [F.meera]));
 ok((await as(U.office, () => db.query(`select * from course_codes`))).rows.length === 1, 'office manages course codes');
 await throwsLike(() => as(U.office, () => db.query(`update timetable_sources set last_status = 'ok'`)), /permission denied/, 'office cannot fake the sync status');
+await throwsLike(() => as(U.office, () => db.query(`delete from timetable_changes`)), /permission denied/, 'the change log cannot be edited');
 await as(U.office, () => db.query(`update timetable_sources set enabled = false`));
 ok((await one(`select enabled from timetable_sources`)).enabled === false, 'office can pause a sheet');
 await throwsLike(() => as(U.aryan, () => db.query(`insert into course_codes (batch, course_code, course_name, faculty_id, sections) values ('2025-27', 'HACK', 'x', $1, '{A}')`, [F.meera])), /row-level security/, 'students cannot add course codes');

@@ -58,6 +58,8 @@ alter table public.timetable_sources enable row level security;
 alter table public.course_codes      enable row level security;
 alter table public.timetable_changes enable row level security;
 
+-- New tables get Supabase's default grants; narrow them to what the app needs.
+revoke all on public.timetable_sources, public.course_codes, public.timetable_changes from anon, authenticated;
 grant select, insert on public.timetable_sources to authenticated;
 -- Office edits through the app may only touch the settings columns, not the sync bookkeeping.
 grant update (file_id, label, enabled) on public.timetable_sources to authenticated;
@@ -82,51 +84,15 @@ language sql stable set search_path = public as $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- apply_timetable: called by the edge function (service role) with one batch's parsed sheet.
+-- apply_timetable(batch, rows, protected, force) is the entry point; the steps below share
+-- per-connection scratch tables that are emptied at commit.
 -- p_rows:      [{date, start, end, code, name, faculty_id, section, elective}]
 -- p_protected: [{date, start}] slots holding a cell that could not be read; sessions there are left alone.
+-- The sync service records the outcome on timetable_sources itself.
 -- ---------------------------------------------------------------------------
-create or replace function public.apply_timetable(
-  p_batch     text,
-  p_rows      jsonb,
-  p_protected jsonb default '[]'::jsonb,
-  p_force     boolean default false,
-  p_hash      text default null,
-  p_report    jsonb default '{}'::jsonb
-) returns jsonb
+create or replace function public.timetable_scratch() returns void
 language plpgsql security definer set search_path = public as $$
-declare
-  v_tz        text := public.app_tz();
-  v_now       timestamptz := now();
-  v_today     date := (now() at time zone public.app_tz())::date;
-  s           public.settings%rowtype;
-  v_future    int;
-  v_cancel    int;
-  v_added     int;
-  v_restored  int;
-  v_changed   int;
-  v_leaves    int := 0;
-  v_result    jsonb;
-  l           record;
-  f           record;
-  v_token     text;
-  v_body      text;
 begin
-  if not public.is_sync_service() then
-    raise exception 'permission denied: only the timetable sync can change the timetable this way' using errcode = '42501';
-  end if;
-  if jsonb_typeof(p_rows) is distinct from 'array' then
-    raise exception 'Expected a list of sessions.' using errcode = '22023';
-  end if;
-  if not exists (select 1 from public.timetable_sources where batch = p_batch) then
-    raise exception 'No timetable sheet is set up for batch %.', p_batch using errcode = '22023';
-  end if;
-  select * into s from public.settings where id = 1;
-  -- One sync per batch at a time (the 10-minute run and "Sync now" can overlap).
-  perform pg_advisory_xact_lock(hashtext('apply_timetable:' || p_batch));
-
-  -- Incoming upcoming sessions, one per (section, course, start).
-  -- Scratch tables for this run (kept per connection, emptied at commit).
   create temp table if not exists _tt_in (section text, code text, name text, faculty_id uuid, starts_at timestamptz, ends_at timestamptz, elective boolean) on commit delete rows;
   create temp table if not exists _tt_slots (starts_at timestamptz) on commit delete rows;
   create temp table if not exists _tt_cancel (id uuid) on commit delete rows;
@@ -136,15 +102,27 @@ begin
   create temp table if not exists _tt_removed (leave_id uuid, session_id uuid, course_code text, starts_at timestamptz) on commit delete rows;
   create temp table if not exists _tt_attach (leave_id uuid, session_id uuid, faculty_id uuid, course_code text, starts_at timestamptz) on commit delete rows;
   create temp table if not exists _tt_unlisted (leave_id uuid, course_code text, starts_at timestamptz) on commit delete rows;
+end $$;
+
+-- Incoming upcoming sessions, protected slots, and the sheet sessions that disappeared.
+create or replace function public.timetable_stage(p_batch text, p_rows jsonb, p_protected jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_tz text := public.app_tz();
+begin
+  if not public.is_sync_service() then
+    raise exception 'permission denied: only the timetable sync can do this' using errcode = '42501';
+  end if;
+  perform public.timetable_scratch();
 
   insert into _tt_in
   select distinct on (x.section, upper(btrim(x.code)), (x.date + x.start) at time zone v_tz)
-         btrim(x.section) as section, upper(btrim(x.code)) as code, nullif(btrim(coalesce(x.name, '')), '') as name,
-         x.faculty_id, (x.date + x.start) at time zone v_tz as starts_at,
-         case when x."end" is null then null else (x.date + x."end") at time zone v_tz end as ends_at,
-         coalesce(x.elective, false) as elective
+         btrim(x.section), upper(btrim(x.code)), nullif(btrim(coalesce(x.name, '')), ''),
+         x.faculty_id, (x.date + x.start) at time zone v_tz,
+         case when x."end" is null then null else (x.date + x."end") at time zone v_tz end,
+         coalesce(x.elective, false)
     from jsonb_to_recordset(p_rows) as x(date date, start time, "end" time, code text, name text, faculty_id uuid, section text, elective boolean)
-   where x.date is not null and x.start is not null and (x.date + x.start) at time zone v_tz >= v_now
+   where x.date is not null and x.start is not null and (x.date + x.start) at time zone v_tz >= now()
    order by x.section, upper(btrim(x.code)), (x.date + x.start) at time zone v_tz;
 
   if exists (select 1 from _tt_in i where i.faculty_id is null or not exists (select 1 from public.people p where p.id = i.faculty_id)) then
@@ -152,41 +130,34 @@ begin
   end if;
 
   insert into _tt_slots
-  select distinct (x.date + x.start) at time zone v_tz as starts_at
+  select distinct (x.date + x.start) at time zone v_tz
     from jsonb_to_recordset(coalesce(p_protected, '[]'::jsonb)) as x(date date, start time)
    where x.date is not null and x.start is not null;
 
-  -- Upcoming sheet sessions that are no longer in the sheet.
   insert into _tt_cancel
   select c.id from public.class_sessions c
-   where c.batch = p_batch and c.source = 'sheet' and not c.cancelled and c.starts_at >= v_now
+   where c.batch = p_batch and c.source = 'sheet' and not c.cancelled and c.starts_at >= now()
      and not exists (select 1 from _tt_in i where i.section = c.section and i.code = c.course_code and i.starts_at = c.starts_at)
      and not exists (select 1 from _tt_slots t where t.starts_at = c.starts_at);
+end $$;
 
-  select count(*) into v_cancel from _tt_cancel;
-  select count(*) into v_future from public.class_sessions
-   where batch = p_batch and source = 'sheet' and not cancelled and starts_at >= v_now;
-
-  -- Safety stop: a broken or half-edited sheet should not wipe out the term.
-  if not p_force and v_cancel > greatest(20, ceil(v_future * 0.3)) then
-    update public.timetable_sources
-       set last_checked_at = v_now, last_status = 'blocked',
-           last_message = format('Not applied: this would cancel %s of the %s upcoming classes. Check the sheet; if the change is intended, use Sync anyway.', v_cancel, v_future),
-           last_report = coalesce(p_report, '{}'::jsonb) || jsonb_build_object('would_cancel', v_cancel, 'upcoming', v_future)
-     where batch = p_batch;
-    return jsonb_build_object('status', 'blocked', 'would_cancel', v_cancel, 'upcoming', v_future);
+-- Add new sessions; update moved, restored or reassigned ones.
+create or replace function public.timetable_write_sessions(p_batch text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_sync_service() then
+    raise exception 'permission denied: only the timetable sync can do this' using errcode = '42501';
   end if;
 
   insert into _tt_diff
-  select i.*, c.id as existing_id, c.cancelled as was_cancelled, c.faculty_id as old_faculty, c.ends_at as old_ends,
-         c.course_name as old_name, c.source as old_source
+  select i.*, c.id, c.cancelled, c.faculty_id, c.ends_at, c.course_name, c.source
     from _tt_in i
     left join public.class_sessions c
       on c.batch = p_batch and c.section = i.section and c.course_code = i.code and c.starts_at = i.starts_at;
 
   with ins as (
     insert into public.class_sessions (course_code, course_name, faculty_id, batch, section, starts_at, ends_at, source, updated_at)
-    select d.code, d.name, d.faculty_id, p_batch, d.section, d.starts_at, d.ends_at, 'sheet', v_now
+    select d.code, d.name, d.faculty_id, p_batch, d.section, d.starts_at, d.ends_at, 'sheet', now()
       from _tt_diff d where d.existing_id is null
     returning id
   )
@@ -204,22 +175,34 @@ begin
           or d.old_name is distinct from d.name or d.old_source <> 'sheet');
 
   update public.class_sessions c
-     set course_name = d.name, faculty_id = d.faculty_id, ends_at = d.ends_at, cancelled = false, source = 'sheet', updated_at = v_now
+     set course_name = d.name, faculty_id = d.faculty_id, ends_at = d.ends_at, cancelled = false, source = 'sheet', updated_at = now()
     from _tt_diff d
    where c.id = d.existing_id and exists (select 1 from _tt_touched t where t.id = c.id);
+end $$;
 
-  update public.class_sessions c set cancelled = true, updated_at = v_now
+-- Sessions no longer in the sheet are marked cancelled, never deleted.
+create or replace function public.timetable_mark_removed() returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_sync_service() then
+    raise exception 'permission denied: only the timetable sync can do this' using errcode = '42501';
+  end if;
+  update public.class_sessions c set cancelled = true, updated_at = now()
    where c.id in (select id from _tt_cancel);
+end $$;
 
-  select count(*) filter (where kind = 'added'), count(*) filter (where kind = 'restored'), count(*) filter (where kind = 'changed')
-    into v_added, v_restored, v_changed from _tt_touched;
-
-  -- Change log for the office.
+-- Change log for the office.
+create or replace function public.timetable_log_changes() returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_sync_service() then
+    raise exception 'permission denied: only the timetable sync can do this' using errcode = '42501';
+  end if;
   insert into public.timetable_changes (batch, section, course_code, starts_at, kind, detail)
   select c.batch, c.section, c.course_code, c.starts_at, t.kind,
          case when t.kind = 'changed' and t.old_faculty is not null
-              then 'Faculty: ' || coalesce((select full_name from public.people where id = t.old_faculty), '?') || ' → ' || p.full_name
-              when t.kind = 'changed' then 'Time: now ' || public.fmt_time(c.starts_at) || coalesce('–' || to_char(c.ends_at at time zone v_tz, 'HH24:MI'), '')
+              then 'Faculty: ' || coalesce((select full_name from public.people where id = t.old_faculty), '?') || ' to ' || p.full_name
+              when t.kind = 'changed' then 'Time: now ' || public.fmt_time(c.starts_at) || coalesce(' to ' || to_char(c.ends_at at time zone public.app_tz(), 'HH24:MI'), '')
               else p.full_name end
     from _tt_touched t
     join public.class_sessions c on c.id = t.id
@@ -228,11 +211,21 @@ begin
   union all
   select c.batch, c.section, c.course_code, c.starts_at, 'cancelled', null
     from _tt_cancel x join public.class_sessions c on c.id = x.id;
+end $$;
 
-  -- -------------------------------------------------------------------------
-  -- Effect on open leave requests of this batch
-  -- -------------------------------------------------------------------------
-  -- Sessions that left the timetable while on someone's leave.
+-- Effect on open leave requests: sessions removed from a leave, sessions added to it
+-- (core courses, and electives the student already listed), and new electives only mentioned.
+create or replace function public.timetable_leave_effects() returns int
+language plpgsql security definer set search_path = public as $$
+declare
+  v_leaves int := 0;
+  l        record;
+  v_body   text;
+begin
+  if not public.is_sync_service() then
+    raise exception 'permission denied: only the timetable sync can do this' using errcode = '42501';
+  end if;
+
   insert into _tt_removed
   select ls.leave_id, c.id as session_id, c.course_code, c.starts_at
     from _tt_cancel x
@@ -310,7 +303,24 @@ begin
       l.id, 'student_timetable_change', '/student/leave/' || l.ref, 'View your leave');
   end loop;
 
-  -- Faculty who now have sessions on a leave.
+  perform public.timetable_faculty_notices();
+  return v_leaves;
+end $$;
+
+-- Faculty who now have sessions on a leave: a full notice with a response link if they are new
+-- to the leave, otherwise a short update.
+create or replace function public.timetable_faculty_notices() returns void
+language plpgsql security definer set search_path = public, extensions as $$
+declare
+  s       public.settings%rowtype;
+  f       record;
+  v_token text;
+begin
+  if not public.is_sync_service() then
+    raise exception 'permission denied: only the timetable sync can do this' using errcode = '42501';
+  end if;
+  select * into s from public.settings where id = 1;
+
   for f in
     select a.leave_id, a.faculty_id, p.full_name, p.email, r.type, r.reason, r.from_date, r.to_date, r.ref,
            st.full_name as student_name, st.student_no,
@@ -330,9 +340,9 @@ begin
                f.student_name, f.lines, public.fmt_range(f.from_date, f.to_date)),
         f.leave_id, 'faculty_timetable_change');
     else
-      v_token := encode(extensions.gen_random_bytes(24), 'hex');
+      v_token := encode(gen_random_bytes(24), 'hex');
       insert into public.faculty_acks (leave_id, faculty_id, token_hash, token_expires_at)
-      values (f.leave_id, f.faculty_id, encode(extensions.digest(v_token, 'sha256'), 'hex'), now() + interval '14 days');
+      values (f.leave_id, f.faculty_id, encode(digest(v_token, 'sha256'), 'hex'), now() + interval '14 days');
       perform public.queue_email(
         f.email, f.full_name,
         format('Leave notice: %s (%s), %s', f.student_name, f.student_no, public.fmt_range(f.from_date, f.to_date)),
@@ -345,22 +355,63 @@ begin
         f.leave_id, 'faculty_notice', '/r/' || v_token, 'Respond to this notice');
     end if;
   end loop;
-
-  v_result := jsonb_build_object('status', 'ok', 'added', v_added, 'restored', v_restored, 'changed', v_changed,
-                                 'cancelled', v_cancel, 'upcoming', (select count(*) from _tt_in), 'leaves_affected', v_leaves);
-
-  update public.timetable_sources
-     set last_checked_at = v_now, last_synced_at = v_now, last_hash = coalesce(p_hash, last_hash), last_status = 'ok',
-         last_message = case when v_added + v_restored + v_changed + v_cancel = 0 then 'Up to date. No changes.'
-                             else format('%s added, %s changed, %s cancelled%s.', v_added + v_restored, v_changed, v_cancel,
-                                         case when v_leaves > 0 then format('; %s leave request%s affected', v_leaves, case when v_leaves = 1 then '' else 's' end) else '' end) end,
-         last_report = coalesce(p_report, '{}'::jsonb) || v_result
-   where batch = p_batch;
-
-  return v_result;
 end $$;
 
--- Bookkeeping for a sync that could not run (download or parse failure, or unchanged sheet).
+create or replace function public.timetable_counts() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_added    int;
+  v_restored int;
+  v_changed  int;
+begin
+  select count(*) filter (where kind = 'added'), count(*) filter (where kind = 'restored'), count(*) filter (where kind = 'changed')
+    into v_added, v_restored, v_changed from _tt_touched;
+  return jsonb_build_object('added', v_added, 'restored', v_restored, 'changed', v_changed, 'upcoming', (select count(*) from _tt_in));
+end $$;
+
+create or replace function public.apply_timetable(
+  p_batch     text,
+  p_rows      jsonb,
+  p_protected jsonb default '[]'::jsonb,
+  p_force     boolean default false
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_future int;
+  v_cancel int;
+  v_leaves int;
+begin
+  if not public.is_sync_service() then
+    raise exception 'permission denied: only the timetable sync can do this' using errcode = '42501';
+  end if;
+  if jsonb_typeof(p_rows) is distinct from 'array' then
+    raise exception 'Expected a list of sessions.' using errcode = '22023';
+  end if;
+  if not exists (select 1 from public.timetable_sources where batch = p_batch) then
+    raise exception 'No timetable sheet is set up for batch %.', p_batch using errcode = '22023';
+  end if;
+  -- One sync per batch at a time (the 10-minute run and "Sync now" can overlap).
+  perform pg_advisory_xact_lock(hashtext('apply_timetable:' || p_batch));
+
+  perform public.timetable_stage(p_batch, p_rows, p_protected);
+
+  -- Safety stop: a broken or half-edited sheet should not wipe out the term.
+  select count(*) into v_cancel from _tt_cancel;
+  select count(*) into v_future from public.class_sessions
+   where batch = p_batch and source = 'sheet' and not cancelled and starts_at >= now();
+  if not p_force and v_cancel > greatest(20, ceil(v_future * 0.3)) then
+    return jsonb_build_object('status', 'blocked', 'would_cancel', v_cancel, 'upcoming', v_future);
+  end if;
+
+  perform public.timetable_write_sessions(p_batch);
+  perform public.timetable_mark_removed();
+  perform public.timetable_log_changes();
+  v_leaves := public.timetable_leave_effects();
+
+  return public.timetable_counts() || jsonb_build_object('status', 'ok', 'cancelled', v_cancel, 'leaves_affected', v_leaves);
+end $$;
+
+-- Bookkeeping for a check that could not run (download or parse failure, or an unchanged sheet).
 create or replace function public.note_timetable_check(p_batch text, p_status text, p_message text, p_report jsonb default null) returns void
 language plpgsql security definer set search_path = public as $$
 begin

@@ -18,6 +18,18 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
+type Outcome = {
+  status: "ok" | "blocked"; added?: number; restored?: number; changed?: number; cancelled?: number;
+  upcoming?: number; would_cancel?: number; leaves_affected?: number;
+};
+
+function summary(r: Outcome): string {
+  const added = (r.added ?? 0) + (r.restored ?? 0);
+  if (added + (r.changed ?? 0) + (r.cancelled ?? 0) === 0) return "Up to date. No changes.";
+  const leaves = r.leaves_affected ? `; ${r.leaves_affected} leave request${r.leaves_affected === 1 ? "" : "s"} affected` : "";
+  return `${added} added, ${r.changed ?? 0} changed, ${r.cancelled ?? 0} cancelled${leaves}.`;
+}
+
 type Source = { batch: string; file_id: string; enabled: boolean; last_hash: string | null; last_status: string | null };
 
 async function allowed(req: Request): Promise<boolean> {
@@ -95,11 +107,28 @@ async function syncOne(src: Source, force: boolean) {
       p_rows: parsed.sessions,
       p_protected: parsed.unreadable.map((u) => ({ date: u.date, start: u.start })),
       p_force: force,
-      p_hash: hash,
-      p_report: report,
     });
     if (error) throw new Error(error.message);
-    return { batch: src.batch, ...(data as Record<string, unknown>) };
+    const r = data as Outcome;
+    const now = new Date().toISOString();
+    if (r.status === "blocked") {
+      await db.from("timetable_sources").update({
+        last_checked_at: now,
+        last_status: "blocked",
+        last_message: `Not applied: ${r.would_cancel} of the ${r.upcoming} upcoming classes are missing from the sheet. Check the sheet; if that is right, use Sync anyway.`,
+        last_report: { ...report, ...r },
+      }).eq("batch", src.batch);
+    } else {
+      await db.from("timetable_sources").update({
+        last_checked_at: now,
+        last_synced_at: now,
+        last_hash: hash,
+        last_status: "ok",
+        last_message: summary(r),
+        last_report: { ...report, ...r },
+      }).eq("batch", src.batch);
+    }
+    return { batch: src.batch, ...r };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await note("error", message);
