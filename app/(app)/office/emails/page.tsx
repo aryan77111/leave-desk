@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { Badge, Card, EmptyState, LinkButton, PageHeader } from '@/components/ui/primitives';
 import { fmtStamp, type Tone } from '@/lib/format';
 import { requireViewer } from '@/lib/session';
+import { sendSummariesNow } from '../actions';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata: Metadata = { title: 'Emails sent' };
@@ -25,7 +26,8 @@ export default async function EmailsPage({ searchParams }: { searchParams: Promi
     .order('id', { ascending: false })
     .range((page - 1) * PAGE, page * PAGE - 1);
   if (status) query = query.eq('status', status);
-  const { data, count } = await query;
+  const [{ data, count }, { data: pending }] = await Promise.all([query, supabase.rpc('digest_pending')]);
+  const held = (pending as { items: number; people: number } | null) ?? { items: 0, people: 0 };
   const mails = (data ?? []) as Mail[];
   const total = count ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE));
@@ -39,9 +41,25 @@ export default async function EmailsPage({ searchParams }: { searchParams: Promi
   return (
     <>
       <PageHeader title="Emails sent" description="Every email Leave Desk sends, newest first. Response links inside faculty emails are not stored after sending." />
+      <Card className="mb-6">
+        <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm">
+            <p className="font-semibold text-ink">Morning summaries</p>
+            <p className="text-ink-muted">
+              Faculty, the Dean and the office get one summary at 08:00 instead of an email per request. Urgent items (a class in the next 24 hours, leave starting today or tomorrow, faculty concerns) and everything to students still go out straight away.
+              {' '}{held.items > 0 ? `${held.items} item${held.items === 1 ? '' : 's'} for ${held.people} ${held.people === 1 ? 'person' : 'people'} are waiting for the next summary.` : 'Nothing is waiting for the next summary.'}
+            </p>
+          </div>
+          {held.items > 0 && (
+            <form action={sendSummariesNow}>
+              <button className="inline-flex h-10 items-center justify-center whitespace-nowrap rounded border border-line-strong bg-white px-4 text-sm font-semibold text-ink hover:bg-canvas sm:h-9">Send summaries now</button>
+            </form>
+          )}
+        </div>
+      </Card>
       {waiting && (
         <div className="mb-4 rounded-md border border-warn-line bg-warn-bg px-4 py-3 text-sm text-warn-fg">
-          Some emails have been waiting more than 10 minutes. Check that the app address and sender are set in Rules and settings, and that the Resend key is added in Supabase.
+          Some emails have been waiting more than 10 minutes. Check System health, and that a Gmail account is connected in Rules and settings.
         </div>
       )}
       <div className="mb-4 flex gap-6 border-b border-line">
@@ -62,7 +80,7 @@ export default async function EmailsPage({ searchParams }: { searchParams: Promi
                     <span><Badge tone={TONE[m.status] ?? 'quiet'}>{LABEL[m.status] ?? m.status}</Badge></span>
                   </summary>
                   <div className="px-5 pb-4">
-                    <pre className="whitespace-pre-wrap rounded bg-canvas p-3 font-sans text-sm text-ink-soft">{m.body}</pre>
+                    <pre className="whitespace-pre-wrap rounded bg-canvas p-3 font-sans text-sm text-ink-soft">{m.body.replace(/^\[\[\d+\]\]$/gm, '   [link]')}</pre>
                     {m.last_error && <p className="mt-2 text-xs text-bad-fg">Last error ({m.attempts} attempt{m.attempts === 1 ? '' : 's'}): {m.last_error}</p>}
                   </div>
                 </details>

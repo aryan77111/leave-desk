@@ -35,10 +35,16 @@ grant usage on schema storage to anon, authenticated;
 grant select, insert on storage.objects to authenticated;
 `;
 await db.exec(stub);
-for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql', '20261012000010_timetable_sync.sql', '20261012000012_term_sheets.sql', '20261012000014_pilot_schema.sql', '20261012000015_pilot_access.sql', '20261012000016_pilot_leave_flow.sql', '20261012000017_pilot_reporting.sql', '20261012000018_gmail_sending.sql']) {
+for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql', '20261012000010_timetable_sync.sql', '20261012000012_term_sheets.sql', '20261012000014_pilot_schema.sql', '20261012000015_pilot_access.sql', '20261012000016_pilot_leave_flow.sql', '20261012000017_pilot_reporting.sql', '20261012000018_gmail_sending.sql', '20261012000019_email_digests.sql']) {
   try { await db.exec(readFileSync(new URL(f, MIG), 'utf8')); console.log('applied', f); }
   catch (e) { console.error('FAILED applying', f, '\n', e.message); process.exit(1); }
 }
+
+// Everything the app would tell people: sent now (outbox) or held for the morning summary.
+await db.exec(`create view all_mail as
+  select 'now' as channel, kind, to_email, leave_id, subject, body, link, created_at from email_outbox
+  union all
+  select 'summary', kind, to_email, leave_id, subject, body, link, created_at from email_digest_items`);
 
 // Users ---------------------------------------------------------------------
 const U = {};
@@ -133,10 +139,10 @@ ok(famRow.approver_level === 'dean', 'family leave routed to the Dean');
 
 const acks = (await db.query(`select a.*, p.email from faculty_acks a join people p on p.id = a.faculty_id where leave_id = $1 order by p.email`, [medRow.id])).rows;
 ok(acks.length === 2 && acks.every(a => a.status === 'pending' && a.token_hash), 'one pending acknowledgment per faculty, each with a token');
-const mail = (await db.query(`select * from email_outbox where leave_id = $1 order by id`, [medRow.id])).rows;
+const mail = (await db.query(`select * from all_mail where leave_id = $1 order by created_at`, [medRow.id])).rows;
 ok(mail.filter(m => m.kind === 'faculty_notice').length === 2, 'two faculty notices queued');
 ok(mail.some(m => m.kind === 'approver_new' && m.to_email === 'dean@college.edu') && mail.some(m => m.kind === 'approver_new' && m.to_email === 'chair@college.edu'), 'every account with Dean access emailed');
-ok(mail.some(m => m.kind === 'student_receipt'), 'student receipt queued');
+ok(!mail.some(m => m.kind === 'student_receipt'), 'no receipt email: the student sees the confirmation on screen');
 ok(mail.filter(m => m.kind === 'faculty_notice').every(m => !m.body.includes('Viral fever')), 'faculty email hides the medical reason');
 
 // Visibility -------------------------------------------------------------------
@@ -165,7 +171,7 @@ const famItem = inbox.x.find(i => i.ref === fam.ref);
 ok(famItem.reason.includes('wedding'), 'inbox shows non-medical reason');
 
 // recover a raw token the way the email would carry it
-const sanjayLink = (await one(`select link from email_outbox where leave_id = $1 and to_email = 'sanjay@college.edu'`, [medRow.id])).link;
+const sanjayLink = (await one(`select link from all_mail where leave_id = $1 and to_email = 'sanjay@college.edu' and kind = 'faculty_notice'`, [medRow.id])).link;
 const token = sanjayLink.split('/r/')[1];
 const ctx = await asAnon(() => one(`select public.token_context($1) as c`, [token]));
 ok(ctx.c.state === 'open' && ctx.c.reason === null && ctx.c.sessions.length === 1, 'link page works without sign-in and hides the medical reason');
@@ -239,7 +245,7 @@ await db.query(`set role service_role`);
 const j1 = (await one(`select public.run_scheduled_jobs() as j`)).j;
 await db.query(`reset role`);
 ok(j1.deemed === 2 && j1.escalated === 1, `after 49 hours: ${j1.deemed} deemed acknowledgments, ${j1.escalated} escalation`);
-ok((await db.query(`select * from email_outbox where kind = 'escalation' and leave_id = $1`, [sickRow.id])).rows.length >= 2, 'approver and office reminded');
+ok((await db.query(`select * from all_mail where kind = 'escalation' and leave_id = $1`, [sickRow.id])).rows.length >= 2, 'approver and office reminded');
 await as(U.chair, () => db.query(`select public.decide_leave($1, true)`, [sickRow.id]));
 await db.query(`update leave_requests set doc_deadline = now() + interval '3 hours' where id = $1`, [sickRow.id]);
 const j2 = (await one(`select public.run_scheduled_jobs() as j`)).j;
@@ -330,7 +336,7 @@ const tama30 = await sess('TAMA', day(30), '09:45'), mdi30 = await sess('MDI', d
 const tama31 = await sess('TAMA', day(31), '09:45');
 const lv = await as(U.aryan, () => one(`select public.submit_leave('official', 'Conference', $1::date, $2::date, $3::uuid[]) as ref`, [day(30), day(31), [tama30.id, mdi30.id, tama31.id]]));
 const lvId = (await one(`select id from leave_requests where ref = $1`, [lv.ref])).id;
-const mailsBefore = (await one(`select count(*)::int n from email_outbox`)).n;
+const mailsBefore = (await one(`select max(created_at) t from all_mail`)).t;
 
 // The office moves TAMA on day 30 to the afternoon, hands MDI to Meera, adds an MDI make-up,
 // a new core ECRM class with the Chair, and a CIB elective class Aryan never listed.
@@ -354,7 +360,7 @@ ok(!has('CIB', day(31), '16:15'), 'elective the student never listed is not adde
 ok(has('TAMA', day(30), '09:45'), 'cancelled class stays on the record for history');
 const ev = await one(`select message from leave_events where leave_id = $1 and kind = 'timetable_changed'`, [lvId]);
 ok(ev && /Removed/.test(ev.message) && /CIB/.test(ev.message), 'student timeline explains the change, including the unlisted elective');
-const newMails = (await db.query(`select kind, to_email from email_outbox order by id offset $1`, [mailsBefore])).rows;
+const newMails = (await db.query(`select kind, to_email from all_mail where created_at > $1`, [mailsBefore])).rows;
 ok(newMails.some(m => m.kind === 'student_timetable_change' && m.to_email === 'aryan@stu.college.edu'), 'student is emailed');
 ok(newMails.some(m => m.kind === 'faculty_notice' && m.to_email === 'chair@college.edu'), 'faculty new to the leave get a full notice with a response link');
 ok((await one(`select count(*)::int n from faculty_acks where leave_id = $1 and faculty_id = $2`, [lvId, F.chair])).n === 1, 'and an acknowledgement is opened for them');
@@ -416,7 +422,7 @@ console.log('\nOne-time links');
 const ackRow = await one(`select token_expires_at, notified_at from faculty_acks order by notified_at desc limit 1`);
 const days = (new Date(ackRow.token_expires_at) - new Date(ackRow.notified_at)) / 864e5;
 ok(days > 6.9 && days < 7.1, `links expire after the configured ${Math.round(days)} days`);
-const expLink = (await one(`select link from email_outbox where kind = 'faculty_notice' and link is not null order by id desc limit 1`)).link;
+const expLink = (await one(`select link from all_mail where kind = 'faculty_notice' and link is not null order by created_at desc limit 1`)).link;
 const expToken = expLink.split('/r/')[1];
 await db.query(`update faculty_acks set token_expires_at = now() - interval '1 minute' where token_hash = encode(extensions.digest($1, 'sha256'), 'hex')`, [expToken]);
 const expCtx = (await asAnon(() => one(`select public.token_context($1) as c`, [expToken]))).c;
@@ -428,20 +434,20 @@ const s10 = async (code) => (await one(`select id, faculty_id from class_session
 const inhrm10 = await s10('INHRM'), picm10 = await s10('PICM');
 const pe = await as(U.priya, () => one(`select public.submit_leave('official', 'Case competition', $1::date, $1::date, $2::uuid[]) as ref`, [day(10), [inhrm10.id]]));
 const peRow = await one(`select id from leave_requests where ref = $1`, [pe.ref]);
-const mark = (await one(`select max(id)::int m from email_outbox`)).m;
+const mark = (await one(`select max(created_at) m from all_mail`)).m;
 await throwsLike(() => as(U.aryan, () => db.query(`select public.edit_leave($1, 'x reason', $2::date, $2::date, '{}')`, [peRow.id, day(10)])), /not found/, 'another student cannot change the request');
 await throwsLike(() => as(U.priya, () => db.query(`select public.edit_leave($1, 'Case competition', $2::date, $2::date, $3::uuid[])`, [peRow.id, day(10), [inhrm10.id]])), /Nothing has changed/, 'saving without changes is refused');
 await as(U.priya, () => db.query(`select public.edit_leave($1, 'National case competition final', $2::date, $2::date, $3::uuid[])`, [peRow.id, day(10), [inhrm10.id, picm10.id]]));
-const em1 = (await db.query(`select kind, to_email from email_outbox where id > $1`, [mark])).rows;
+const em1 = (await db.query(`select kind, to_email from all_mail where created_at > $1`, [mark])).rows;
 ok(em1.some(m => m.kind === 'faculty_notice' && m.to_email === 'sanjay@college.edu'), 'faculty newly affected by the change get a notice');
 ok(!em1.some(m => m.kind === 'faculty_notice' && m.to_email === 'meera@college.edu'), 'faculty whose sessions did not change are not emailed again');
 ok(em1.some(m => m.kind === 'approver_changed'), 'the Dean is told about the change');
 const edEv = await one(`select message from leave_events where leave_id = $1 and kind = 'edited'`, [peRow.id]);
 ok(/sessions 1 → 2/.test(edEv.message) && /reason updated/.test(edEv.message), `history records what changed (${edEv.message})`);
-const mark2 = (await one(`select max(id)::int m from email_outbox`)).m;
+const mark2 = (await one(`select max(created_at) m from all_mail`)).m;
 await as(U.priya, () => db.query(`select public.edit_leave($1, 'National case competition final', $2::date, $2::date, $3::uuid[])`, [peRow.id, day(10), [picm10.id]]));
 ok((await one(`select count(*)::int n from faculty_acks where leave_id = $1 and faculty_id = $2`, [peRow.id, inhrm10.faculty_id])).n === 0, 'faculty no longer affected are taken off the request');
-ok((await db.query(`select 1 from email_outbox where id > $1 and kind = 'faculty_released' and to_email = 'meera@college.edu'`, [mark2])).rows.length === 1, 'and told no response is needed');
+ok((await db.query(`select 1 from all_mail where created_at > $1 and kind = 'faculty_released' and to_email = 'meera@college.edu'`, [mark2])).rows.length === 1, 'and told no response is needed');
 
 console.log('\nDean delegation');
 await throwsLike(() => as(U.aryan, () => db.query(`select public.set_delegation($1, $2::date, $3::date)`, [F.sanjay, today, day(3)])), /Only the Dean or the Dean HRM Office/, 'students cannot name a delegate');
@@ -462,7 +468,7 @@ ok(/on behalf of the Dean/.test((await one(`select message from leave_events whe
 await throwsLike(() => as(U.priya, () => db.query(`select public.edit_leave($1, 'Changed again', $2::date, $2::date, '{}')`, [peRow.id, day(10)])), /Only requests waiting/, 'a decided request cannot be changed by the student');
 
 const fresh = await as(U.priya, () => one(`select public.submit_leave('family', 'Cousin''s wedding', $1::date, $1::date, '{}') as ref`, [day(12)]));
-ok((await db.query(`select 1 from email_outbox e join leave_requests r on r.id = e.leave_id where r.ref = $1 and e.kind = 'approver_new' and e.to_email = 'sanjay@college.edu'`, [fresh.ref])).rows.length === 1, 'new requests are emailed to the delegate too');
+ok((await db.query(`select 1 from all_mail e join leave_requests r on r.id = e.leave_id where r.ref = $1 and e.kind = 'approver_new' and e.to_email = 'sanjay@college.edu'`, [fresh.ref])).rows.length === 1, 'new requests are emailed to the delegate too');
 await as(U.dean, () => db.query(`select public.end_delegation($1)`, [delId]));
 ok((await as(U.sanjay, () => one(`select public.can_decide() as c`))).c === false, 'ending the delegation takes the access away');
 ok((await as(U.sanjay, () => db.query(`select id from leave_requests`))).rows.length === 0, 'and the delegate can no longer read requests');
@@ -561,5 +567,53 @@ ok((await as(U.office, () => one(`select gmail_sender from settings`))).gmail_se
 await as(U.office, () => db.query(`select public.gmail_disconnect()`));
 ok((await one(`select count(*)::int n from private.app_secrets where name = 'gmail_refresh_token' and value <> ''`)).n === 0 && (await one(`select gmail_sender from settings`)).gmail_sender === null, 'disconnecting removes the token');
 
+
+console.log('\nDaily summaries');
+const newc80 = (await one(`select id from class_sessions where course_code = 'NEWC' and section = 'A' and public.local_date(starts_at) = $1`, [day(80)])).id;
+const tsA = (await one(`select max(created_at) t from all_mail`)).t;
+const far = await as(U.priya, () => one(`select public.submit_leave('official', 'Industry visit', $1::date, $1::date, $2::uuid[]) as ref`, [day(80), [newc80]]));
+const farId = await bid(far.ref);
+const farMail = (await db.query(`select channel, kind, to_email from all_mail where leave_id = $1 and created_at > $2`, [farId, tsA])).rows;
+ok(farMail.some(m => m.kind === 'faculty_notice' && m.channel === 'summary'), 'a notice for a class weeks away waits for the morning summary');
+ok(farMail.some(m => m.kind === 'approver_new' && m.channel === 'summary') && !farMail.some(m => m.kind === 'approver_new' && m.channel === 'now'), 'the Dean hears about leave weeks away in the summary');
+ok(!farMail.some(m => m.kind === 'student_receipt'), 'no receipt email for the student');
+
+const soonDay = (await one(`select public.local_date(now() + interval '1 hour')::text d`)).d;
+const soonSess = (await one(`insert into class_sessions (course_code, faculty_id, batch, section, starts_at) values ('SOON', $1, '2025-27', 'A', now() + interval '1 hour') returning id`, [F.meera])).id;
+const soon = await as(U.priya, () => one(`select public.submit_leave('medical', 'Food poisoning', $1::date, $1::date, $2::uuid[], false, null, null, null, true) as ref`, [soonDay, [soonSess]]));
+const soonId = await bid(soon.ref);
+const soonMail = (await db.query(`select channel, kind, to_email, thread_key, thread_subject from email_outbox o join (select 'now' channel) c on true where leave_id = $1`, [soonId])).rows;
+ok(soonMail.some(m => m.kind === 'faculty_notice' && m.to_email === 'meera@college.edu'), 'a notice for a class in the next 24 hours goes out straight away');
+ok(soonMail.some(m => m.kind === 'approver_new'), 'leave starting today or tomorrow reaches the Dean straight away');
+ok(soonMail.every(m => m.thread_key && m.thread_key.startsWith('lv-' + soonId)), 'instant emails about a request share a conversation key');
+ok(soonMail.some(m => m.thread_subject === `Leave ${soon.ref} · Priya K. Nair (UH25041)`), 'staff see one conversation per request');
+await as(U.dean, () => db.query(`select public.decide_leave($1, true)`, [soonId]));
+ok((await one(`select thread_subject from email_outbox where leave_id = $1 and kind = 'student_decision'`, [soonId])).thread_subject === `Your leave request ${soon.ref}`, 'the student gets one conversation per request');
+ok((await db.query(`select 1 from email_outbox where kind = 'delegation_set' and to_email = 'office@college.edu'`)).rows.length === 0, 'delegation copies to the Dean and office are not sent');
+
+await as(U.priya, () => db.query(`select public.withdraw_leave($1)`, [farId]));
+await throwsLike(() => as(U.aryan, () => db.query(`select public.compose_digests()`)), /Only the Dean HRM Office/, 'students cannot send the summaries');
+const pend = (await as(U.office, () => one(`select public.digest_pending() as p`))).p;
+ok(pend.items > 0 && pend.people > 0, `${pend.items} items for ${pend.people} people waiting for the summary`);
+const tsB = (await one(`select now() t`)).t;
+const nSum = (await as(U.office, () => one(`select public.compose_digests() as n`))).n;
+const sums = (await db.query(`select to_email, subject, body, links from email_outbox where kind = 'digest'`)).rows;
+ok(nSum > 0 && sums.length === nSum, `one summary per person (${nSum})`);
+ok(!sums.some(m => m.to_email === 'sanjay@college.edu' && m.body.includes('Industry visit')) && !sums.some(m => m.body.includes(far.ref)), 'a request withdrawn before anyone heard of it is left out');
+const deanSum = sums.find(m => m.to_email === 'dean@college.edu');
+ok(deanSum && /to act on/.test(deanSum.subject) && /ALSO WAITING FROM EARLIER|TO ACT ON/.test(deanSum.body), `the Dean's summary lists what is waiting (${deanSum?.subject})`);
+const facSum = sums.find(m => m.links && m.links.some(l => (l.path ?? '').startsWith('/r/')));
+ok(facSum && /\[\[1\]\]/.test(facSum.body) && /No reply by/.test(facSum.body), 'faculty summaries carry a one-tap link per notice');
+const restarted = (await db.query(`select 1 from faculty_acks a join people p on p.id = a.faculty_id where lower(p.email) = $1 and a.status = 'pending' and a.notified_at >= $2`, [facSum.to_email, tsB])).rows.length;
+ok(restarted > 0, 'the faculty response window starts when the summary is sent');
+await throwsLike(() => as(U.office, () => db.query(`select links from email_outbox`)), /permission denied/, 'summary links are not readable by anyone in the app');
+ok((await as(U.office, () => one(`select public.compose_digests() as n`))).n === 0, 'nothing is sent twice');
+await db.query(`set role service_role`);
+const claimSum = (await db.query(`select id, kind from public.claim_emails(100)`)).rows.find(m => m.kind === 'digest');
+await db.query(`select public.mark_email($1, true)`, [claimSum.id]);
+await db.query(`reset role`);
+ok((await one(`select links from email_outbox where id = $1`, [claimSum.id])).links === null, 'links are cleared once the summary is sent');
+
+if (process.env.SHOW_DIGEST) { for (const m of (await db.query(`select to_email, subject, body, links from email_outbox where kind = 'digest' order by id`)).rows) console.log("\n=== " + m.to_email + " | " + m.subject + "\n" + m.body + "\nlinks: " + JSON.stringify(m.links)); }
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

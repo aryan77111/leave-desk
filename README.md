@@ -37,7 +37,7 @@ Phone layouts: lists become cards below tablet width, buttons are at least 44 px
 | Database | Supabase Postgres, project `leave-desk` in Mumbai (`ljqozmznjasgfjeshrfq`) |
 | Sign-in | Google, through Supabase Auth. Access is limited to people on the roster |
 | Files | Private Supabase Storage bucket `certificates`, 5 MB limit, PDF/JPG/PNG |
-| Scheduled jobs | `pg_cron`: workflow jobs every 10 minutes, email dispatch every minute |
+| Scheduled jobs | `pg_cron`: workflow jobs every 10 minutes, email dispatch every minute, morning summaries at 08:00 IST |
 | Email | Edge Function `send-emails` sends the outbox through a connected college Gmail account (Gmail API), or Resend as a fallback; `gmail-connect` handles the Google sign-in |
 | Hosting | Vercel |
 
@@ -144,6 +144,21 @@ The Dean HRM Office overview shows a checklist until these steps are done.
 - **Edit** any person to fix a name, email, roles, student ID, batch or section, or to switch off their access. **Add person** handles one-off additions.
 - When a batch passes out, use **Batches → Mark as graduated**. This deactivates its students, so they can no longer sign in, but keeps their leave history for audits and attendance queries. It is refused while any request from that batch is still open. **Restore** undoes it.
 
+## Emails: who gets what, and when
+
+To keep email down, staff get **one summary each morning at 08:00** instead of an email per request:
+
+| Sent straight away | In the morning summary | Not sent |
+|---|---|---|
+| Everything to students that needs action or gives an outcome (decision, certificate request, reminder, cancellation, correction, faculty note) | New requests for the Dean (with anything still waiting from earlier) | The student's own "we received your request" (shown on screen); office-filed requests still email the student |
+| Faculty notices for a class in the next 24 hours | Faculty notices for later classes, each with its own one-tap link | Delegation copies to the Dean and office |
+| New requests starting today or tomorrow | Changes, withdrawals, cancellations, timetable updates, certificates to check, overdue reminders | |
+| Faculty concerns; problems reported; error alerts; delegation notice to the person named | | |
+
+The summary leaves out anything that no longer needs attention: a request already decided, withdrawn before the person heard of it,
+or a notice already answered. A faculty member's response window starts when the summary is sent. All instant emails about one
+request arrive in one conversation per person. **Emails sent → Send summaries now** sends the summaries immediately (for testing).
+
 ## Rules (changeable in Rules and settings)
 
 | Rule | Default |
@@ -165,7 +180,7 @@ npm install
 cp .env.example .env.local
 npm run dev          # http://localhost:3000 (add http://localhost:3000/auth/callback to Supabase redirect URLs)
 npm test             # date, routing and CSV unit tests
-npm run test:db      # 210 workflow and security tests against an in-process Postgres
+npm run test:db      # 229 workflow and security tests against an in-process Postgres
 npm run typecheck
 npm run build
 ```

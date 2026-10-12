@@ -110,13 +110,14 @@ export default async function HelpPage() {
         <Section id="faculty" title="For faculty">
           <QA q="Why am I getting these emails?">
             A student will miss one or more of your sessions and has applied for leave. The email lists the sessions. You do not need to sign anything.
+            To keep email down, notices arrive together in <strong>one summary each morning at 08:00</strong>. A notice about a class in the next 24 hours is sent straight away.
           </QA>
           <QA q="What should I do?">
             One tap is enough: <strong>Acknowledge</strong>. You can also <strong>add a note</strong> for the student (emailed to them, for example about a quiz), or
             <strong> raise a concern</strong>, which only the Dean and the Dean HRM Office see.
           </QA>
           <QA q="What if I do not reply?">
-            After <strong>{hours(h.ack_hours)}</strong> your reply is recorded as “deemed acknowledged”. Your silence does not approve anything: the Dean still decides every request.
+            After <strong>{hours(h.ack_hours)}</strong> from when the notice reached you, your reply is recorded as “deemed acknowledged”. Your silence does not approve anything: the Dean still decides every request.
             Make-up of any evaluation stays at your discretion.
           </QA>
           <QA q="The link in the email does not work">
@@ -131,8 +132,11 @@ export default async function HelpPage() {
         </Section>
 
         <Section id="dean" title="For the Dean">
+          <QA q="Emails">
+            New requests arrive in <strong>one summary each morning at 08:00</strong>, with anything still waiting from earlier. Leave starting today or tomorrow, and concerns raised by faculty, are sent straight away. The approval queue is always up to date.
+          </QA>
           <QA q="Reminders">
-            If a request has no decision after {hours(h.escalate_hours)}, the Dean and the Dean HRM Office are reminded once by email.
+            If a request has no decision after {hours(h.escalate_hours)}, it is marked overdue in the next morning summary for the Dean and the Dean HRM Office.
           </QA>
           <QA q="Deciding several at once">
             In the approval queue, tick requests and approve them together. Requests where a faculty member raised a concern cannot be ticked; open them first. Rejections are always one at a time, with a reason.

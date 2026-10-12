@@ -24,7 +24,25 @@ type Mail = {
   body: string;
   link: string | null;
   link_label: string | null;
+  links: { path: string; label: string }[] | null;
+  thread_key: string | null;
+  thread_subject: string | null;
 };
+
+// Every email about one request goes into one conversation per person: same subject, and a shared
+// reference to a made-up "first message" of that conversation.
+const threadRef = (m: Mail) => (m.thread_key ? `<${m.thread_key}@leave-desk>` : null);
+const subjectOf = (m: Mail) => m.thread_subject ?? m.subject;
+// Inside a conversation the subject stays the same, so the first line says what this email is about.
+const leadLine = (m: Mail) => (m.thread_subject ? m.subject : null);
+
+// A summary email marks each link as a line "[[n]]"; n points into m.links.
+const LINK_LINE = /^\[\[(\d+)\]\]$/;
+const HEADING = /^[A-Z][A-Z ]{3,}$/;
+function linkAt(m: Mail, n: number, appUrl: string) {
+  const l = m.links?.[n - 1];
+  return l ? { href: new URL(l.path, appUrl).toString(), label: l.label } : null;
+}
 
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -32,7 +50,16 @@ const esc = (s: string) =>
 function html(m: Mail, appUrl: string | null, programme: string) {
   const href = m.link && appUrl ? new URL(m.link, appUrl).toString() : null;
   const greeting = m.to_name ? `Dear ${esc(m.to_name)},` : "Hello,";
-  const body = esc(m.body).replace(/\n/g, "<br>");
+  const body = m.body.split("\n").map((line) => {
+    const k = LINK_LINE.exec(line.trim());
+    if (k && appUrl) {
+      const l = linkAt(m, Number(k[1]), appUrl);
+      return l ? `<a href="${esc(l.href)}" style="display:inline-block;margin:6px 0 2px;color:#003C6F;font-weight:600">${esc(l.label)} &rarr;</a>` : "";
+    }
+    if (HEADING.test(line.trim())) return `<strong style="display:inline-block;margin-top:6px;font-size:12px;letter-spacing:.06em;color:#5B6676">${esc(line.trim())}</strong>`;
+    return esc(line);
+  }).join("<br>");
+  const lead = leadLine(m);
   const helpHref = appUrl ? new URL("/help", appUrl).toString() : null;
   const button = href
     ? `<p style="margin:24px 0"><a href="${esc(href)}" style="background:#003C6F;color:#ffffff;text-decoration:none;padding:11px 18px;border-radius:4px;font-weight:600;display:inline-block">${esc(m.link_label ?? "Open Leave Desk")}</a></p>
@@ -43,6 +70,7 @@ function html(m: Mail, appUrl: string | null, programme: string) {
   <table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #D9E0E8;border-radius:6px">
     <tr><td style="background:#003C6F;color:#ffffff;padding:14px 20px;font-weight:700;font-size:15px;border-radius:6px 6px 0 0">Leave Desk <span style="color:#E4B84F;font-weight:600;font-size:12px;letter-spacing:.06em;margin-left:6px">${esc(programme.toUpperCase())}</span></td></tr>
     <tr><td style="padding:22px 20px;font-size:14px;line-height:1.55">
+      ${lead ? `<p style="margin:0 0 14px;font-weight:700">${esc(lead)}</p>` : ""}
       <p style="margin:0 0 14px">${greeting}</p>
       <p style="margin:0">${body}</p>
       ${button}
@@ -54,7 +82,14 @@ function html(m: Mail, appUrl: string | null, programme: string) {
 function text(m: Mail, appUrl: string | null) {
   const href = m.link && appUrl ? new URL(m.link, appUrl).toString() : null;
   const help = appUrl ? `\nHelp and rules: ${new URL("/help", appUrl).toString()}` : "";
-  return `${m.to_name ? `Dear ${m.to_name},\n\n` : ""}${m.body}${href ? `\n\n${m.link_label ?? "Open Leave Desk"}: ${href}` : ""}\n\n— Leave Desk${help}`;
+  const body = m.body.split("\n").map((line) => {
+    const k = LINK_LINE.exec(line.trim());
+    if (!k || !appUrl) return line;
+    const l = linkAt(m, Number(k[1]), appUrl);
+    return l ? `   ${l.label}: ${l.href}` : "";
+  }).join("\n");
+  const lead = leadLine(m);
+  return `${lead ? `${lead}\n\n` : ""}${m.to_name ? `Dear ${m.to_name},\n\n` : ""}${body}${href ? `\n\n${m.link_label ?? "Open Leave Desk"}: ${href}` : ""}\n\n— Leave Desk${help}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +117,9 @@ function mime(m: Mail, fromName: string, fromAddr: string, appUrl: string, progr
   return [
     `From: ${nameAddr(fromName, fromAddr)}`,
     `To: ${nameAddr(m.to_name, m.to_email)}`,
-    `Subject: ${word(m.subject)}`,
+    `Subject: ${word(subjectOf(m))}`,
+    `Message-ID: <ld-${m.id}-${crypto.randomUUID()}@leave-desk>`,
+    ...(threadRef(m) ? [`In-Reply-To: ${threadRef(m)}`, `References: ${threadRef(m)}`] : []),
     "MIME-Version: 1.0",
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     "",
@@ -170,7 +207,8 @@ Deno.serve(async (req) => {
           body: JSON.stringify({
             from: settings?.email_from || FALLBACK_FROM,
             to: [m.to_name ? `${m.to_name.replace(/[<>"]/g, "")} <${m.to_email}>` : m.to_email],
-            subject: m.subject,
+            subject: subjectOf(m),
+            ...(threadRef(m) ? { headers: { "In-Reply-To": threadRef(m)!, References: threadRef(m)! } } : {}),
             html: html(m, appUrl, programme),
             text: text(m, appUrl),
           }),

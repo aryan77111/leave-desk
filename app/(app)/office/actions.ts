@@ -282,3 +282,11 @@ export async function disconnectGmail(): Promise<void> {
   revalidatePath('/office/settings');
   redirect('/office/settings?gmail=disconnected#email');
 }
+
+export async function sendSummariesNow(): Promise<void> {
+  await requireViewer('office');
+  const supabase = await createClient();
+  await supabase.rpc('compose_digests');
+  revalidatePath('/office/emails');
+  redirect('/office/emails');
+}
