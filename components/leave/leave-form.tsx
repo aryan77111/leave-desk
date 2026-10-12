@@ -1,7 +1,7 @@
 'use client';
 import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { FileUp } from 'lucide-react';
+import { CertificatePicker } from '@/components/leave/certificate-picker';
 import { Card, Field } from '@/components/ui/primitives';
 import { FormMessage, SubmitButton } from '@/components/ui/form';
 import { createClient } from '@/lib/supabase/client';
@@ -38,8 +38,6 @@ const TYPES: { value: LeaveType; hint: string }[] = [
 ];
 
 const OFFICE_MAX_DAYS = 120;
-const CERT_MAX_BYTES = 5 * 1024 * 1024;
-const CERT_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
 
 export function LeaveForm({ mode = 'apply', batch, section, rules, action, initial, hidden, studentName, userId }: {
   mode?: LeaveFormMode;
@@ -64,24 +62,13 @@ export function LeaveForm({ mode = 'apply', batch, section, rules, action, initi
   const [loadError, setLoadError] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Map<string, boolean>>(new Map());
   const [certFile, setCertFile] = useState<File | null>(null);
-  const [certError, setCertError] = useState<string | null>(null);
-  const certInput = useRef<HTMLInputElement>(null);
   // If the request is refused (say, a date problem) the same file is not uploaded twice.
   const uploaded = useRef<{ file: File; path: string } | null>(null);
   const needsCert = mode === 'apply' && type === 'medical';
 
-  function pickCert(f: File | null) {
-    setCertError(null);
-    if (!f) { setCertFile(null); return; }
-    if (!CERT_TYPES.includes(f.type)) { setCertError('Upload a PDF, JPG or PNG file.'); setCertFile(null); return; }
-    if (f.size > CERT_MAX_BYTES) { setCertError('The file is larger than 5 MB. Scan at a lower resolution or upload a PDF.'); setCertFile(null); return; }
-    setCertFile(f);
-  }
-
   // A medical certificate goes to storage first, straight from the browser; the request then
   // carries its path. Other requests go to the server action as they are.
   async function submit(prev: ActionResult | null, form: FormData): Promise<ActionResult> {
-    form.delete('certificate');
     if (needsCert) {
       if (!certFile) return { error: 'Attach your medical certificate. The Dean HRM Office checks it before the request goes to the Dean.' };
       let path = uploaded.current?.file === certFile ? uploaded.current.path : null;
@@ -237,22 +224,8 @@ export function LeaveForm({ mode = 'apply', batch, section, rules, action, initi
 
         {needsCert && (
           <Card title="Medical certificate" description="Checked by the Dean HRM Office before the request goes to the Dean. Seen only by them and the Dean; faculty never see it.">
-            <div className="flex flex-col gap-3 px-5 py-4">
-              <button
-                type="button"
-                onClick={() => certInput.current?.click()}
-                className={clsx(
-                  'flex flex-col items-center gap-2 rounded border border-dashed px-4 py-6 text-center',
-                  certFile ? 'border-navy-700 bg-navy-50' : 'border-bronze-600/60 bg-gold-100/50 hover:bg-gold-100',
-                )}
-              >
-                <FileUp className="h-5 w-5 text-bronze-600" />
-                <span className="max-w-full truncate text-sm font-semibold text-ink">{certFile ? certFile.name : 'Choose the certificate'}</span>
-                <span className="text-xs text-ink-muted">{certFile ? 'Tap to choose a different file' : 'PDF, JPG or PNG, up to 5 MB. A clear phone photo is fine.'}</span>
-              </button>
-              <input ref={certInput} type="file" name="certificate" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" className="sr-only"
-                onChange={(e) => pickCert(e.target.files?.[0] ?? null)} aria-label="Medical certificate file" />
-              {certError && <p role="alert" className="text-sm text-bad-fg">{certError}</p>}
+            <div className="px-5 py-4">
+              <CertificatePicker file={certFile} onChange={setCertFile} />
             </div>
           </Card>
         )}

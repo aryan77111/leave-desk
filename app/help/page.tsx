@@ -99,7 +99,7 @@ export default async function HelpPage() {
             Yes, until it is decided. Open the request and choose <em>Change request</em> or <em>Withdraw</em>. Faculty whose sessions change are told automatically. After a decision, contact the Dean HRM Office.
           </QA>
           <QA q="What about the medical certificate?">
-            Attach it when you apply (PDF, JPG or PNG, up to 5 MB; a clear phone photo is fine). The Dean HRM Office checks it first, and then the request goes to the Dean, whose approval is final.
+            Attach it when you apply: tap <em>Take a photo</em> to use your phone’s camera (or your laptop’s webcam), or <em>Choose a file</em> for a PDF, JPG or PNG up to 5 MB. Large photos are shrunk automatically. The Dean HRM Office checks it first, and then the request goes to the Dean, whose approval is final.
             If the office returns it, you are emailed the reason and get at least two days to upload a new one. A request with no certificate is cancelled at the deadline shown on it, and the absence counts as unapproved.
             Only the Dean HRM Office and the Dean can see the certificate and the medical reason; faculty never can.
           </QA>

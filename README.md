@@ -11,7 +11,7 @@ Automatic jobs handle deemed acknowledgment, reminders to the Dean and the offic
 
 ### Medical leave
 
-1. The student applies and attaches the certificate (PDF, JPG or PNG, up to 5 MB). Faculty are told straight away.
+1. The student applies and attaches the certificate: **Take a photo** (opens the phone camera, or the webcam inside the page on a computer) or **Choose a file** (PDF, JPG or PNG, up to 5 MB; HEIC/WebP and large photos are converted to a smaller JPEG in the browser). Faculty are told straight away.
 2. The Dean HRM Office opens the certificate and either **accepts** it (the request goes to the Dean, who is emailed) or **returns** it with a reason (the student is emailed and has at least 2 days to upload a new one).
 3. The Dean approves or rejects. Approval is final; there is no provisional stage.
 
