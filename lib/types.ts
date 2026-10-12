@@ -80,6 +80,7 @@ export type LeaveRequest = {
   doc_path: string | null;
   doc_uploaded_at: string | null;
   doc_checked_at: string | null;
+  doc_return_note: string | null;
   escalated_at: string | null;
   closed_at: string | null;
   filed_by: string | null;

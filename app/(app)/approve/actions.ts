@@ -21,9 +21,7 @@ export async function decideLeave(_prev: ActionResult | null, form: FormData): P
   revalidatePath(`/approve/${ref}`);
   const status = data as string;
   return {
-    ok: status === 'sanctioned'
-      ? 'Sanctioned provisionally. The student has been asked to upload a certificate.'
-      : status === 'approved' ? 'Approved. The student has been emailed.' : 'Rejected. The student has been emailed with your reason.',
+    ok: status === 'approved' ? 'Approved. The student has been emailed.' : 'Rejected. The student has been emailed with your reason.',
   };
 }
 

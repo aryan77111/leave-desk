@@ -94,6 +94,16 @@ export const STATUS_TONE: Record<LeaveStatus, Tone> = {
   withdrawn: 'quiet',
 };
 
+/** Where a medical request waiting for a decision stands. The certificate comes with the request,
+ *  the Dean HRM Office checks it, then the Dean decides. null = not medical, decided, or with the Dean. */
+export type MedicalStep = 'certificate' | 'office';
+export function medicalStep(l: { type: LeaveType; status: LeaveStatus; doc_path: string | null; doc_checked_at: string | null }): MedicalStep | null {
+  if (l.type !== 'medical' || l.status !== 'submitted' || l.doc_checked_at) return null;
+  return l.doc_path ? 'office' : 'certificate';
+}
+export const STEP_LABEL: Record<MedicalStep, string> = { certificate: 'Certificate needed', office: 'Certificate check' };
+export const STEP_TONE: Record<MedicalStep, Tone> = { certificate: 'warn', office: 'info' };
+
 export const ACK_LABEL: Record<AckStatus, string> = {
   pending: 'Waiting',
   acknowledged: 'Acknowledged',

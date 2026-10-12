@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, daysInclusive, fmtDay, fmtRange, fmtStamp, fmtTime, homeFor, localDate, routeLevel } from './format.ts';
+import { addDays, daysInclusive, fmtDay, fmtRange, fmtStamp, fmtTime, homeFor, localDate, medicalStep, routeLevel } from './format.ts';
 import { normalizeDate, normalizeTime, toCsv, toPeopleRows, toSessionRows } from './csv.ts';
 
 test('dates format in college time', () => {
@@ -48,4 +48,14 @@ test('CSV import normalises headers, dates and times', () => {
 test('CSV export quotes and neutralises formulas', () => {
   const csv = toCsv(['a', 'b'], [['=SUM(A1)', 'x, y'], ['plain', null]]);
   assert.equal(csv, `a,b\r\n'=SUM(A1),"x, y"\r\nplain,`);
+});
+
+test('medical requests show the certificate step until the office has checked it', () => {
+  const base = { type: 'medical' as const, status: 'submitted' as const, doc_path: null, doc_checked_at: null };
+  assert.equal(medicalStep(base), 'certificate');
+  assert.equal(medicalStep({ ...base, doc_path: 'u/l/c.pdf' }), 'office');
+  assert.equal(medicalStep({ ...base, doc_path: 'u/l/c.pdf', doc_checked_at: '2026-10-12T05:00:00Z' }), null);
+  assert.equal(medicalStep({ ...base, doc_checked_at: '2026-10-12T05:00:00Z' }), null, 'office-filed requests count as checked');
+  assert.equal(medicalStep({ ...base, type: 'family' }), null);
+  assert.equal(medicalStep({ ...base, status: 'approved', doc_path: 'x' }), null);
 });

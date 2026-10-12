@@ -2,18 +2,28 @@
 
 Digital student leave approvals for the MBA-HRM programme. It replaces the paper leave form.
 
-- **Students** apply online. Missed sessions are filled in from the timetable, and medical certificates are uploaded online.
+- **Students** apply online. Missed sessions are filled in from the timetable. Medical leave is applied for with the certificate attached.
 - **Faculty** acknowledge with one tap from the email (no sign-in), add a note for the student, or raise a concern with the Dean.
 - **The Dean** decides every request from one queue that shows faculty notes and concerns.
-- **The Dean HRM Office** manages the roster and timetable, checks certificates, exports attendance and sets the rules.
+- **The Dean HRM Office** checks each medical certificate before the request goes to the Dean, manages the roster and timetable, exports attendance and sets the rules.
 
-Automatic jobs handle deemed acknowledgment, reminders to the Dean, certificate reminders and auto-cancellation.
+Automatic jobs handle deemed acknowledgment, reminders to the Dean and the office, missing-certificate reminders and auto-cancellation.
+
+### Medical leave
+
+1. The student applies and attaches the certificate (PDF, JPG or PNG, up to 5 MB). Faculty are told straight away.
+2. The Dean HRM Office opens the certificate and either **accepts** it (the request goes to the Dean, who is emailed) or **returns** it with a reason (the student is emailed and has at least 2 days to upload a new one).
+3. The Dean approves or rejects. Approval is final; there is no provisional stage.
+
+The Dean cannot decide a medical request before the office has checked it, and it does not appear in the approval queue until then.
+If the student changes the dates after the check, the office checks again. A request filed by the office counts as checked.
+A request with no certificate (the upload failed, or it was returned and not replaced) is cancelled at its deadline.
 
 ## Pilot features
 
 | Feature | Where | Who |
 | --- | --- | --- |
-| **Pilot results**: decided within the reminder time, faculty replies in their window, certificates on time, requests made online, survey satisfaction, each against its target; per-request CSV for the Week 11 report | Pilot results (`/results`) | Dean, Dean HRM Office |
+| **Pilot results**: decided within the reminder time, faculty replies in their window, certificates checked by the office in time, requests made online, survey satisfaction, each against its target; per-request CSV for the Week 11 report | Pilot results (`/results`) | Dean, Dean HRM Office |
 | **Out of office**: name a faculty member or office colleague to decide for given dates. They get the Dean's emails and queue; decisions say "on behalf of the Dean" | Out of office / Dean's delegates (`/away`) | Dean, Dean HRM Office |
 | **File leave for a student**, including after the dates (hospital, emergency); no timing rules; a reason for filing is required and kept off the student's view | File leave for a student | Dean HRM Office |
 | **Correct** the dates and sessions of an open or approved request, or **cancel** a mistaken one, with a reason on the history | Request page → Correct or cancel | Dean HRM Office |
@@ -152,7 +162,7 @@ To keep email down, staff get **one summary each morning at 08:00** instead of a
 |---|---|---|
 | Everything to students that needs action or gives an outcome (decision, certificate request, reminder, cancellation, correction, faculty note) | New requests for the Dean (with anything still waiting from earlier) | The student's own "we received your request" (shown on screen); office-filed requests still email the student |
 | Faculty notices for a class in the next 24 hours | Faculty notices for later classes, each with its own one-tap link | Delegation copies to the Dean and office |
-| New requests starting today or tomorrow | Changes, withdrawals, cancellations, timetable updates, certificates to check, overdue reminders | |
+| New requests and certificates to check, for leave starting today or tomorrow (or already past, as medical leave usually is) | Later requests and certificates to check, changes, withdrawals, cancellations, timetable updates, overdue reminders | |
 | Faculty concerns; problems reported; error alerts; delegation notice to the person named | | |
 
 The summary leaves out anything that no longer needs attention: a request already decided, withdrawn before the person heard of it,
@@ -167,7 +177,7 @@ request arrive in one conversation per person. **Emails sent → Send summaries 
 | Time to apply for medical leave | 24 hours after the first day ends |
 | Faculty response window, then deemed acknowledged | 48 hours |
 | Reminder to the Dean | after 48 hours |
-| Medical certificate deadline | 2 days after resuming |
+| Deadline for a missing certificate | 2 days after the last day of leave (a returned one: at least 2 days from the return) |
 | Who decides | The Dean, for every request |
 | Longest leave applied for online | 15 days |
 | Faculty email links work for | 7 days |

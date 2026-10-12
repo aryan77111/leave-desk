@@ -12,7 +12,7 @@ export default async function ExportPage() {
     <>
       <PageHeader
         title="Attendance export"
-        description="A spreadsheet of every session missed on sanctioned or approved leave, one row per student per session. Use it to mark approved leave in the attendance system."
+        description="A spreadsheet of every session missed on approved leave, one row per student per session. Use it to mark approved leave in the attendance system."
       />
       <Card className="max-w-2xl">
         <form action="/office/export/csv" method="get" className="flex flex-col gap-5 px-5 py-5">

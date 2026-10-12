@@ -10,8 +10,8 @@ const RULES: { key: keyof Settings; label: string; hint: string; unit: string }[
   { key: 'medical_late_hours', label: 'Time to apply for medical leave', hint: 'Counted from the end of the first day of absence.', unit: 'hours' },
   { key: 'medical_ahead_days', label: 'How far ahead medical leave can be applied', hint: 'For a planned procedure or doctor-advised rest.', unit: 'days' },
   { key: 'ack_hours', label: 'Faculty response window', hint: 'No reply after this is recorded as acknowledged.', unit: 'hours' },
-  { key: 'escalate_hours', label: 'Reminder to the Dean after', hint: 'The approver and the Dean HRM Office are emailed.', unit: 'hours' },
-  { key: 'doc_days', label: 'Medical certificate deadline', hint: 'Days after resuming classes. Missing it cancels the leave.', unit: 'days' },
+  { key: 'escalate_hours', label: 'Reminder after', hint: 'A request with the Dean this long: the Dean and the Dean HRM Office are reminded. A certificate unchecked this long: the Dean HRM Office is reminded.', unit: 'hours' },
+  { key: 'doc_days', label: 'Deadline for a missing certificate', hint: 'Days after the last day of leave, for a medical request whose certificate did not upload. A returned certificate always gets at least 2 days. Missing it cancels the request.', unit: 'days' },
   { key: 'max_leave_days', label: 'Longest leave students can apply for here', hint: 'Longer leave is handled by the Dean HRM Office directly.', unit: 'days' },
   { key: 'link_days', label: 'Faculty email links work for', hint: 'After this a link shows nothing about the request. Faculty can always sign in instead.', unit: 'days' },
 ];
@@ -19,7 +19,7 @@ const RULES: { key: keyof Settings; label: string; hint: string; unit: string }[
 const TARGETS: { key: keyof Settings; label: string; unit: string; step?: number; max: number; min: number }[] = [
   { key: 'target_decision_pct', label: 'Requests decided within the reminder time', unit: '%', min: 0, max: 100 },
   { key: 'target_ack_pct', label: 'Faculty replying within their window', unit: '%', min: 0, max: 100 },
-  { key: 'target_cert_pct', label: 'Medical certificates uploaded on time', unit: '%', min: 0, max: 100 },
+  { key: 'target_cert_pct', label: 'Certificates checked within the reminder time', unit: '%', min: 0, max: 100 },
   { key: 'target_satisfaction', label: 'Average satisfaction in the survey', unit: 'out of 5', step: 0.1, min: 1, max: 5 },
 ];
 

@@ -2,15 +2,19 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CheckCircle2, Circle, FilePlus2 } from 'lucide-react';
 import { Alert, Card, EmptyState, LinkButton, PageHeader, Stat, TableWrap } from '@/components/ui/primitives';
-import { fmtDay, fmtRange, fmtStamp, relativeHours, todayLocal, TYPE_LABEL } from '@/lib/format';
+import { fmtDay, fmtRange, relativeHours, todayLocal, TYPE_LABEL } from '@/lib/format';
 import { getSettings, requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import type { LeaveType } from '@/lib/types';
 
 export const metadata: Metadata = { title: 'Overview' };
 
-type Row = { id: string; ref: string; type: LeaveType; from_date: string; to_date: string; submitted_at: string; doc_uploaded_at: string | null; doc_deadline: string | null; student: { full_name: string; student_no: string | null } | null };
-const SELECT = 'id, ref, type, from_date, to_date, submitted_at, doc_uploaded_at, doc_deadline, student:people!leave_requests_student_id_fkey(full_name, student_no)';
+type Row = { id: string; ref: string; type: LeaveType; from_date: string; to_date: string; submitted_at: string; doc_uploaded_at: string | null; doc_deadline: string | null; doc_checked_at: string | null; student: { full_name: string; student_no: string | null } | null };
+const SELECT = 'id, ref, type, from_date, to_date, submitted_at, doc_uploaded_at, doc_deadline, doc_checked_at, student:people!leave_requests_student_id_fkey(full_name, student_no)';
+// With the Dean: any request except a medical one whose certificate the office has not checked.
+const WITH_DEAN = 'type.neq.medical,doc_checked_at.not.is.null';
+// With the Dean for longer than the reminder time (a medical request from when it was checked).
+const overdue_ = (before: string) => `and(type.neq.medical,submitted_at.lt."${before}"),and(type.eq.medical,doc_checked_at.lt."${before}")`;
 
 export default async function OfficeHome() {
   await requireViewer('office');
@@ -19,19 +23,19 @@ export default async function OfficeHome() {
   const overdueBefore = new Date(Date.now() - s.escalate_hours * 36e5).toISOString();
   const count = { count: 'exact' as const, head: true };
 
-  const [waiting, overdue, toCheck, certDue, failed, queued, students, faculty, approvers, sessions, checkList, overdueList, newFeedback, errors, delegations] = await Promise.all([
-    supabase.from('leave_requests').select('id', count).eq('status', 'submitted'),
-    supabase.from('leave_requests').select('id', count).eq('status', 'submitted').lt('submitted_at', overdueBefore),
-    supabase.from('leave_requests').select('id', count).eq('status', 'documents_in'),
-    supabase.from('leave_requests').select('id', count).eq('status', 'sanctioned'),
+  const [waiting, overdue, toCheck, certMissing, failed, queued, students, faculty, approvers, sessions, checkList, overdueList, newFeedback, errors, delegations] = await Promise.all([
+    supabase.from('leave_requests').select('id', count).eq('status', 'submitted').or(WITH_DEAN),
+    supabase.from('leave_requests').select('id', count).eq('status', 'submitted').or(overdue_(overdueBefore)),
+    supabase.from('leave_requests').select('id', count).eq('status', 'submitted').eq('type', 'medical').not('doc_path', 'is', null).is('doc_checked_at', null),
+    supabase.from('leave_requests').select('id', count).eq('status', 'submitted').eq('type', 'medical').is('doc_path', null).is('doc_checked_at', null),
     supabase.from('email_outbox').select('id', count).eq('status', 'failed'),
     supabase.from('email_outbox').select('id', count).in('status', ['queued', 'sending']),
     supabase.from('people').select('id', count).contains('roles', ['student']).eq('active', true),
     supabase.from('people').select('id', count).contains('roles', ['faculty']).eq('active', true),
     supabase.from('people').select('id', count).contains('roles', ['approver']).eq('active', true),
     supabase.from('class_sessions').select('id', count).gte('starts_at', new Date().toISOString()),
-    supabase.from('leave_requests').select(SELECT).eq('status', 'documents_in').order('doc_uploaded_at').limit(10),
-    supabase.from('leave_requests').select(SELECT).eq('status', 'submitted').lt('submitted_at', overdueBefore).order('submitted_at').limit(10),
+    supabase.from('leave_requests').select(SELECT).eq('status', 'submitted').eq('type', 'medical').not('doc_path', 'is', null).is('doc_checked_at', null).order('doc_uploaded_at').limit(10),
+    supabase.from('leave_requests').select(SELECT).eq('status', 'submitted').or(overdue_(overdueBefore)).order('submitted_at').limit(10),
     supabase.from('feedback').select('id', count).eq('status', 'new'),
     supabase.from('app_errors').select('id', count).gte('created_at', new Date(Date.now() - 864e5).toISOString()),
     supabase.from('approval_delegations').select('starts_on, ends_on, delegate:people!approval_delegations_delegate_id_fkey(full_name)')
@@ -54,7 +58,7 @@ export default async function OfficeHome() {
     <>
       <PageHeader
         title="Overview"
-        description={`${s.programme_name} leave at a glance. Rules: ${s.notice_hours} h notice, ${s.ack_hours} h faculty window, certificates within ${s.doc_days} days.`}
+        description={`${s.programme_name} leave at a glance. Rules: ${s.notice_hours} h notice, ${s.ack_hours} h faculty window. Medical certificates come with the request; you check them before the Dean decides.`}
         action={<LinkButton href="/office/leave/new" variant="secondary"><FilePlus2 className="h-4 w-4" />File leave for a student</LinkButton>}
       />
 
@@ -84,27 +88,27 @@ export default async function OfficeHome() {
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-        <Stat label="Awaiting decision" value={n(waiting)} href="/office/leave?status=submitted" />
+        <Stat label="Certificates to check" value={n(toCheck)} tone="warn" href="/office/leave?status=check" />
+        <Stat label="Certificates missing" value={n(certMissing)} href="/office/leave?status=needed" />
+        <Stat label="With the Dean" value={n(waiting)} href="/office/leave?status=submitted" />
         <Stat label="Overdue decisions" value={n(overdue)} tone="bad" href="/office/leave?status=submitted" />
-        <Stat label="Certificates to check" value={n(toCheck)} tone="warn" href="/office/leave?status=documents_in" />
-        <Stat label="Certificates due" value={n(certDue)} href="/office/leave?status=sanctioned" />
         <Stat label="Emails waiting" value={n(queued)} href="/office/emails" />
         <Stat label="Emails failed" value={n(failed)} tone="bad" href="/office/emails?status=failed" />
         <Stat label="New feedback" value={n(newFeedback)} tone="warn" href="/office/feedback" />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Card title="Certificates to check" action={<LinkButton href="/office/leave?status=documents_in" variant="ghost">View all</LinkButton>}>
+        <Card title="Certificates to check" action={<LinkButton href="/office/leave?status=check" variant="ghost">View all</LinkButton>}>
           {checks.length === 0 ? <EmptyState title="Nothing to check" /> : (
             <TableWrap>
               <table className="data-table">
-                <thead><tr><th>Student</th><th>Leave</th><th>Uploaded</th></tr></thead>
+                <thead><tr><th>Student</th><th>Leave</th><th>Waiting</th></tr></thead>
                 <tbody>
                   {checks.map((r) => (
                     <tr key={r.id} className="row-link">
                       <td><Link href={`/office/leave/${r.ref}`} className="font-semibold text-navy-700 hover:underline">{r.student?.full_name}</Link><div className="text-xs text-ink-muted">{r.ref}</div></td>
                       <td className="whitespace-nowrap">{fmtRange(r.from_date, r.to_date)}</td>
-                      <td className="whitespace-nowrap text-ink-soft">{r.doc_uploaded_at ? fmtStamp(r.doc_uploaded_at) : ''}</td>
+                      <td className="whitespace-nowrap text-ink-soft">{r.doc_uploaded_at ? relativeHours(r.doc_uploaded_at) : ''}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -122,7 +126,7 @@ export default async function OfficeHome() {
                     <tr key={r.id} className="row-link">
                       <td><Link href={`/office/leave/${r.ref}`} className="font-semibold text-navy-700 hover:underline">{r.student?.full_name}</Link><div className="text-xs text-ink-muted">{r.ref}</div></td>
                       <td className="whitespace-nowrap">{fmtRange(r.from_date, r.to_date)}<div className="text-xs text-ink-muted">{TYPE_LABEL[r.type]}</div></td>
-                      <td className="whitespace-nowrap text-bad-fg">{relativeHours(r.submitted_at)}</td>
+                      <td className="whitespace-nowrap text-bad-fg">{relativeHours(r.doc_checked_at ?? r.submitted_at)}</td>
                     </tr>
                   ))}
                 </tbody>

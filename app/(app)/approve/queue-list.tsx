@@ -12,7 +12,7 @@ import { approveSelected, type BulkResult } from './actions';
 export type QueueRow = {
   id: string; ref: string; type: LeaveType; status: LeaveStatus; from_date: string; to_date: string;
   student_name: string; student_meta: string; answered: number; acks: number; concerns: number;
-  waiting: string; overdue: boolean; decided_at: string | null; filed_by_office: boolean;
+  waiting: string; overdue: boolean; decided_at: string | null; filed_by_office: boolean; certificate_checked?: boolean;
 };
 
 /** The approval queue. In the "Waiting" view the Dean can tick requests and approve them together. */
@@ -28,7 +28,6 @@ export function QueueList({ rows, selectable }: { rows: QueueRow[]; selectable: 
   const allOn = eligible.length > 0 && eligible.every((id) => selected.has(id));
   const toggleAll = () => setSelected(allOn ? new Set() : new Set(eligible));
   const chosen = rows.filter((r) => selected.has(r.id));
-  const medical = chosen.filter((r) => r.type === 'medical').length;
 
   const run = () => start(async () => {
     const res = await approveSelected([...selected], note);
@@ -95,7 +94,7 @@ export function QueueList({ rows, selectable }: { rows: QueueRow[]; selectable: 
                   : <StatusBadge status={r.status} />}
               </div>
               <div className="mt-0.5 text-xs text-ink-muted">{r.student_meta}</div>
-              <div className="mt-1.5 text-sm text-ink">{fmtRange(r.from_date, r.to_date)} <span className="text-ink-muted">· {TYPE_LABEL[r.type]}</span></div>
+              <div className="mt-1.5 text-sm text-ink">{fmtRange(r.from_date, r.to_date)} <span className="text-ink-muted">· {TYPE_LABEL[r.type]}{r.certificate_checked && ', certificate checked'}</span></div>
               <div className="mt-1 text-xs text-ink-muted">Faculty: {facultyCell(r)}{r.filed_by_office && ' · filed by office'}</div>
             </Link>
           </li>
@@ -121,7 +120,7 @@ export function QueueList({ rows, selectable }: { rows: QueueRow[]; selectable: 
                   <Link href={`/approve/${r.ref}`} className="font-semibold text-navy-700 hover:underline">{r.student_name}</Link>
                   <div className="text-xs text-ink-muted">{r.student_meta}{r.filed_by_office && ' · filed by office'}</div>
                 </td>
-                <td className="whitespace-nowrap">{fmtRange(r.from_date, r.to_date)}<div className="text-xs text-ink-muted">{TYPE_LABEL[r.type]}</div></td>
+                <td className="whitespace-nowrap">{fmtRange(r.from_date, r.to_date)}<div className="text-xs text-ink-muted">{TYPE_LABEL[r.type]}{r.certificate_checked && ', certificate checked'}</div></td>
                 <td className="whitespace-nowrap">{facultyCell(r)}</td>
                 <td className="whitespace-nowrap">
                   {selectable
@@ -148,8 +147,7 @@ export function QueueList({ rows, selectable }: { rows: QueueRow[]; selectable: 
           ) : (
             <div className="flex flex-col gap-3">
               <p className="text-sm text-ink">
-                Approve {selected.size} request{selected.size === 1 ? '' : 's'}?
-                {medical > 0 && <> {medical} medical request{medical === 1 ? ' is' : 's are'} sanctioned provisionally until the certificate is in.</>}
+                Approve {selected.size} request{selected.size === 1 ? '' : 's'}? Approval is final, and each student is emailed.
               </p>
               <label className="flex flex-col gap-1.5">
                 <span className="text-sm font-semibold text-ink-soft">Note to every student <span className="font-normal text-ink-muted">(optional)</span></span>

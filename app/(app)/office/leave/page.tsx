@@ -2,17 +2,31 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { StatusBadge } from '@/components/leave/badges';
 import { Card, EmptyState, LinkButton, PageHeader, TableWrap } from '@/components/ui/primitives';
-import { fmtRange, fmtStamp, STATUS_LABEL, TYPE_LABEL } from '@/lib/format';
+import { fmtRange, fmtStamp, medicalStep, STATUS_LABEL, TYPE_LABEL } from '@/lib/format';
 import { requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import type { LeaveStatus, LeaveType } from '@/lib/types';
 
 export const metadata: Metadata = { title: 'All leave' };
 
+// Status filter. A medical request waiting for a decision is at one of three steps.
+const FILTERS = {
+  check: 'Certificate to check',
+  needed: 'Certificate needed',
+  submitted: 'With the Dean',
+  approved: STATUS_LABEL.approved,
+  rejected: STATUS_LABEL.rejected,
+  cancelled: STATUS_LABEL.cancelled,
+  withdrawn: STATUS_LABEL.withdrawn,
+} as const;
+type Filter = keyof typeof FILTERS;
+
 const PAGE = 50;
 type Row = {
   id: string; ref: string; type: LeaveType; status: LeaveStatus; from_date: string; to_date: string; submitted_at: string;
   doc_deadline: string | null;
+  doc_path: string | null;
+  doc_checked_at: string | null;
   student: { full_name: string; student_no: string | null; batch: string | null; section: string | null } | null;
   leave_sessions: { session_id: string }[];
 };
@@ -24,7 +38,7 @@ export default async function AllLeave({ searchParams }: {
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
   const q = (sp.q ?? '').trim().replace(/[%,()*\\]/g, '').slice(0, 60);
-  const status = sp.status && sp.status in STATUS_LABEL ? (sp.status as LeaveStatus) : undefined;
+  const status = sp.status && sp.status in FILTERS ? (sp.status as Filter) : undefined;
   const type = sp.type && sp.type in TYPE_LABEL ? (sp.type as LeaveType) : undefined;
   const isDate = (d?: string) => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d);
 
@@ -33,14 +47,17 @@ export default async function AllLeave({ searchParams }: {
   let query = supabase
     .from('leave_requests')
     .select(
-      `id, ref, type, status, from_date, to_date, submitted_at, doc_deadline,
+      `id, ref, type, status, from_date, to_date, submitted_at, doc_deadline, doc_path, doc_checked_at,
        student:people!leave_requests_student_id_fkey${inner ? '!inner' : ''}(full_name, student_no, batch, section),
        leave_sessions(session_id)`,
       { count: 'exact' },
     )
     .order('submitted_at', { ascending: false })
     .range((page - 1) * PAGE, page * PAGE - 1);
-  if (status) query = query.eq('status', status);
+  if (status === 'check') query = query.eq('status', 'submitted').eq('type', 'medical').not('doc_path', 'is', null).is('doc_checked_at', null);
+  else if (status === 'needed') query = query.eq('status', 'submitted').eq('type', 'medical').is('doc_path', null).is('doc_checked_at', null);
+  else if (status === 'submitted') query = query.eq('status', 'submitted').or('type.neq.medical,doc_checked_at.not.is.null');
+  else if (status) query = query.eq('status', status as LeaveStatus);
   if (type) query = query.eq('type', type);
   if (isDate(sp.from)) query = query.gte('to_date', sp.from!);
   if (isDate(sp.to)) query = query.lte('from_date', sp.to!);
@@ -68,7 +85,7 @@ export default async function AllLeave({ searchParams }: {
           <label className="flex flex-col gap-1"><span className="label-caps">Status</span>
             <select name="status" defaultValue={status ?? ''} className="field-input">
               <option value="">All</option>
-              {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              {Object.entries(FILTERS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select></label>
           <label className="flex flex-col gap-1"><span className="label-caps">Type</span>
             <select name="type" defaultValue={type ?? ''} className="field-input">
@@ -94,11 +111,11 @@ export default async function AllLeave({ searchParams }: {
                   <Link href={`/office/leave/${r.ref}`} className="block px-4 py-3.5 hover:bg-navy-50/50">
                     <div className="flex items-start justify-between gap-2">
                       <span className="text-sm font-semibold text-navy-700">{r.student?.full_name}</span>
-                      <StatusBadge status={r.status} />
+                      <StatusBadge status={r.status} step={medicalStep(r)} />
                     </div>
                     <div className="mt-0.5 text-xs text-ink-muted">{r.student?.student_no} · {r.student?.batch} {r.student?.section} · {r.ref}</div>
                     <div className="mt-1 text-sm text-ink">{fmtRange(r.from_date, r.to_date)} <span className="text-ink-muted">· {TYPE_LABEL[r.type]} · {r.leave_sessions.length} sessions</span></div>
-                    {r.status === 'sanctioned' && r.doc_deadline && <div className="mt-0.5 text-xs text-ink-muted">Certificate due {fmtStamp(r.doc_deadline)}</div>}
+                    {medicalStep(r) === 'certificate' && r.doc_deadline && <div className="mt-0.5 text-xs text-ink-muted">Certificate due {fmtStamp(r.doc_deadline)}</div>}
                   </Link>
                 </li>
               ))}
@@ -114,7 +131,7 @@ export default async function AllLeave({ searchParams }: {
                     <td>{r.student?.full_name}<div className="text-xs text-ink-muted">{r.student?.student_no} · {r.student?.batch} {r.student?.section}</div></td>
                     <td className="whitespace-nowrap">{fmtRange(r.from_date, r.to_date)}<div className="text-xs text-ink-muted">{TYPE_LABEL[r.type]}</div></td>
                     <td className="tabular-nums">{r.leave_sessions.length}</td>
-                    <td><StatusBadge status={r.status} />{r.status === 'sanctioned' && r.doc_deadline && <div className="mt-1 text-xs text-ink-muted">Due {fmtStamp(r.doc_deadline)}</div>}</td>
+                    <td><StatusBadge status={r.status} step={medicalStep(r)} />{medicalStep(r) === 'certificate' && r.doc_deadline && <div className="mt-1 text-xs text-ink-muted">Due {fmtStamp(r.doc_deadline)}</div>}</td>
                   </tr>
                 ))}
               </tbody>

@@ -2,10 +2,11 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { LeaveDetail } from '@/components/leave/leave-detail';
+import { ExternalLink } from 'lucide-react';
 import { Card, PageHeader } from '@/components/ui/primitives';
-import { daysInclusive, plural, TYPE_LABEL } from '@/lib/format';
+import { daysInclusive, fmtStamp, medicalStep, plural, TYPE_LABEL } from '@/lib/format';
 import { getConcerns, getEvents, getLeaveByRef } from '@/lib/leave';
-import { getSettings, requireDecider } from '@/lib/session';
+import { requireDecider } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { DecisionForm } from './decision-form';
 
@@ -19,7 +20,6 @@ export default async function ApproveDetail({ params }: { params: Promise<{ ref:
   const supabase = await createClient();
   const leave = await getLeaveByRef(supabase, ref);
   if (!leave) notFound();
-  const s = await getSettings();
   const [events, concerns, history] = await Promise.all([
     getEvents(supabase, leave.id),
     getConcerns(supabase, leave.id),
@@ -30,16 +30,46 @@ export default async function ApproveDetail({ params }: { params: Promise<{ ref:
   ]);
   const past = (history.data ?? []) as { from_date: string; to_date: string }[];
   const pastDays = past.reduce((n, p) => n + daysInclusive(p.from_date, p.to_date), 0);
-  const canDecide = leave.status === 'submitted';
+  const step = medicalStep(leave);
+  const canDecide = leave.status === 'submitted' && !step;
+
+  let certUrl: string | null = null;
+  if (leave.doc_path) {
+    const { data } = await supabase.storage.from('certificates').createSignedUrl(leave.doc_path, 600);
+    certUrl = data?.signedUrl ?? null;
+  }
 
   const aside = (
     <>
-      {canDecide && <DecisionForm leaveId={leave.id} leaveRef={leave.ref} medical={leave.type === 'medical'} docDays={s.doc_days} delegate={delegate} />}
+      {step && (
+        <Card title="Not ready for a decision yet">
+          <p className="px-5 py-4 text-sm text-ink-soft">
+            {step === 'office'
+              ? 'The Dean HRM Office is checking the medical certificate. The request comes to your queue, with an email, once it is checked.'
+              : 'The student has not attached a medical certificate yet. It comes to you after the Dean HRM Office checks one.'}
+          </p>
+        </Card>
+      )}
+      {canDecide && <DecisionForm leaveId={leave.id} leaveRef={leave.ref} delegate={delegate} />}
+      {leave.type === 'medical' && leave.doc_path && (
+        <Card title="Medical certificate" description={leave.doc_checked_at ? `Checked by the Dean HRM Office ${fmtStamp(leave.doc_checked_at)}${leave.checker ? ` (${leave.checker.full_name})` : ''}` : 'Not checked yet'}>
+          <div className="flex flex-col gap-2 px-5 py-4">
+            {certUrl ? (
+              <a href={certUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-semibold text-navy-700 hover:underline">
+                Open certificate <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            ) : (
+              <p className="text-sm text-bad-fg">The file could not be opened. Refresh the page to try again.</p>
+            )}
+            <p className="text-xs text-ink-muted">The link works for 10 minutes. Do not forward it.</p>
+          </div>
+        </Card>
+      )}
       <Card title="Leave in the last 6 months">
         <p className="px-5 py-4 text-sm text-ink-soft">
           {past.length === 0
-            ? `${leave.student?.full_name} has no other sanctioned or approved leave in the last 6 months.`
-            : `${plural(past.length, 'other request')}, ${plural(pastDays, 'day')} in total, sanctioned or approved.`}
+            ? `${leave.student?.full_name} has no other approved leave in the last 6 months.`
+            : `${plural(past.length, 'other request')}, ${plural(pastDays, 'day')} in total, approved.`}
         </p>
       </Card>
     </>

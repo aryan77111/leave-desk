@@ -35,7 +35,7 @@ grant usage on schema storage to anon, authenticated;
 grant select, insert on storage.objects to authenticated;
 `;
 await db.exec(stub);
-for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql', '20261012000010_timetable_sync.sql', '20261012000012_term_sheets.sql', '20261012000014_pilot_schema.sql', '20261012000015_pilot_access.sql', '20261012000016_pilot_leave_flow.sql', '20261012000017_pilot_reporting.sql', '20261012000018_gmail_sending.sql', '20261012000019_email_digests.sql']) {
+for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql', '20261012000010_timetable_sync.sql', '20261012000012_term_sheets.sql', '20261012000014_pilot_schema.sql', '20261012000015_pilot_access.sql', '20261012000016_pilot_leave_flow.sql', '20261012000017_pilot_reporting.sql', '20261012000018_gmail_sending.sql', '20261012000019_email_digests.sql', '20261012000021_certificate_first.sql']) {
   try { await db.exec(readFileSync(new URL(f, MIG), 'utf8')); console.log('applied', f); }
   catch (e) { console.error('FAILED applying', f, '\n', e.message); process.exit(1); }
 }
@@ -141,7 +141,10 @@ const acks = (await db.query(`select a.*, p.email from faculty_acks a join peopl
 ok(acks.length === 2 && acks.every(a => a.status === 'pending' && a.token_hash), 'one pending acknowledgment per faculty, each with a token');
 const mail = (await db.query(`select * from all_mail where leave_id = $1 order by created_at`, [medRow.id])).rows;
 ok(mail.filter(m => m.kind === 'faculty_notice').length === 2, 'two faculty notices queued');
-ok(mail.some(m => m.kind === 'approver_new' && m.to_email === 'dean@college.edu') && mail.some(m => m.kind === 'approver_new' && m.to_email === 'chair@college.edu'), 'every account with Dean access emailed');
+ok(!mail.some(m => m.kind === 'approver_new'), 'a medical request does not reach the Dean before the office checks the certificate');
+ok(medRow.doc_deadline !== null && medRow.doc_checked_at === null, 'a medical request starts unchecked, with a deadline in case the certificate is missing');
+const famMail = (await db.query(`select * from all_mail where leave_id = $1`, [famRow.id])).rows;
+ok(famMail.some(m => m.kind === 'approver_new' && m.to_email === 'dean@college.edu') && famMail.some(m => m.kind === 'approver_new' && m.to_email === 'chair@college.edu'), 'every account with Dean access emailed about a new family request');
 ok(!mail.some(m => m.kind === 'student_receipt'), 'no receipt email: the student sees the confirmation on screen');
 ok(mail.filter(m => m.kind === 'faculty_notice').every(m => !m.body.includes('Viral fever')), 'faculty email hides the medical reason');
 
@@ -151,6 +154,7 @@ ok((await as(U.priya, () => db.query(`select * from leave_requests where id = $1
 ok((await as(U.meera, () => db.query(`select * from leave_requests`))).rows.length === 0, 'faculty cannot read leave rows directly');
 await throwsLike(() => as(U.meera, () => db.query(`select token_hash from faculty_acks`)), /permission denied/, 'token hashes are not readable');
 await throwsLike(() => as(U.office, () => db.query(`select link from email_outbox`)), /permission denied/, 'outbox links are not readable');
+await db.query(`select public.queue_email('someone@college.edu', 'Someone', 'Test', 'Body', null, 'test')`);
 ok((await as(U.office, () => db.query(`select id from email_outbox`))).rows.length > 0, 'office can read the outbox');
 ok((await as(U.aryan, () => db.query(`select id from email_outbox`))).rows.length === 0, 'students cannot read the outbox');
 ok((await as(U.aryan, () => db.query(`select full_name from people`))).rows.every(r => r.full_name !== 'Priya Nair'), 'students cannot see other students');
@@ -196,32 +200,52 @@ console.log('\nDecisions');
 ok((await db.query(`select approver_level from people where 'approver' = any (roles)`)).rows.every(r => r.approver_level === 'dean'), 'imported approvers (including role "dean" and a former chair) all have Dean access');
 ok((await one(`select public.route_level('official', current_date, current_date + 10) as l`)).l === 'dean', 'long official leave also goes to the Dean');
 await throwsLike(() => as(U.meera, () => db.query(`select public.decide_leave($1, true)`, [medRow.id])), /Only the Dean can decide leave, or a colleague/, 'faculty cannot decide');
-await throwsLike(() => as(U.chair, () => db.query(`select public.decide_leave($1, false, '  ')`, [medRow.id])), /explaining the rejection/, 'rejection needs a note');
-const d1 = await as(U.chair, () => one(`select public.decide_leave($1, true) as s`, [medRow.id]));
-ok(d1.s === 'sanctioned', 'medical leave sanctioned provisionally');
-const medAfter = await one(`select doc_deadline, (doc_deadline at time zone 'Asia/Kolkata')::date as dd from leave_requests where id = $1`, [medRow.id]);
-ok(medAfter.dd.toISOString().slice(0, 10) === day(2) || new Date(medAfter.doc_deadline) - Date.now() >= 23 * 3600e3, `certificate deadline set (${medAfter.dd.toISOString().slice(0, 10)})`);
-await throwsLike(() => as(U.chair, () => db.query(`select public.decide_leave($1, true)`, [medRow.id])), /already been decided/, 'cannot decide twice');
+await throwsLike(() => as(U.chair, () => db.query(`select public.decide_leave($1, false, '  ')`, [famRow.id])), /explaining the rejection/, 'rejection needs a note');
+await throwsLike(() => as(U.chair, () => db.query(`select public.decide_leave($1, true)`, [medRow.id])), /not checked the medical certificate/, 'the Dean cannot decide a medical request before the office checks the certificate');
 const d2 = await as(U.dean, () => one(`select public.decide_leave($1, true, 'Sanctioned. Meet Dr. Mohanty about the quiz.') as s`, [famRow.id]));
 ok(d2.s === 'approved', 'family leave approved by the Dean (final, no documents)');
 
 // Certificate --------------------------------------------------------------------
 console.log('\nCertificate');
-const goodPath = `${U.aryan.id}/${medRow.id}/certificate.pdf`;
-await throwsLike(() => as(U.aryan, () => db.query(`insert into storage.objects (bucket_id, name) values ('certificates', $1)`, [`${U.priya.id}/${medRow.id}/x.pdf`])), /row-level security/, 'cannot upload into another student\'s folder');
+const goodPath = `${U.aryan.id}/apply-1/certificate.pdf`;
+await throwsLike(() => as(U.aryan, () => db.query(`insert into storage.objects (bucket_id, name) values ('certificates', $1)`, [`${U.priya.id}/apply-1/x.pdf`])), /row-level security/, 'cannot upload into another student\'s folder');
 await as(U.aryan, () => db.query(`insert into storage.objects (bucket_id, name) values ('certificates', $1)`, [goodPath]));
+await as(U.priya, () => db.query(`insert into storage.objects (bucket_id, name) values ('certificates', $1)`, [`${U.priya.id}/apply-9/hers.pdf`]));
 ok((await as(U.meera, () => db.query(`select * from storage.objects`))).rows.length === 0, 'faculty cannot read certificates');
-ok((await as(U.office, () => db.query(`select * from storage.objects`))).rows.length === 1, 'office can read certificates');
+ok((await as(U.office, () => db.query(`select * from storage.objects`))).rows.length === 2, 'office can read certificates');
 await throwsLike(() => as(U.priya, () => db.query(`select public.attach_certificate($1, $2)`, [medRow.id, goodPath])), /not found/, 'another student cannot attach');
-await throwsLike(() => as(U.aryan, () => db.query(`select public.attach_certificate($1, $2)`, [medRow.id, `${U.aryan.id}/${medRow.id}/missing.pdf`])), /Upload the file first/, 'attach checks the file exists');
+await throwsLike(() => as(U.aryan, () => db.query(`select public.attach_certificate($1, $2)`, [medRow.id, `${U.aryan.id}/apply-1/missing.pdf`])), /Upload the file first/, 'attach checks the file exists');
+await throwsLike(() => as(U.aryan, () => db.query(`select public.attach_certificate($1, $2)`, [medRow.id, `${U.priya.id}/apply-9/hers.pdf`])), /Upload the file first/, 'another student\'s file cannot be attached');
+await throwsLike(() => as(U.dean, () => db.query(`select public.attach_certificate($1, $2)`, [famRow.id, goodPath])), /not found/, 'only the student attaches');
 await as(U.aryan, () => db.query(`select public.attach_certificate($1, $2)`, [medRow.id, goodPath]));
-ok((await one(`select status from leave_requests where id = $1`, [medRow.id])).status === 'documents_in', 'status moves to documents in');
+const withCert = await one(`select status, doc_path, doc_checked_at from leave_requests where id = $1`, [medRow.id]);
+ok(withCert.status === 'submitted' && withCert.doc_path === goodPath && withCert.doc_checked_at === null, 'certificate attached; the request waits for the office');
+ok((await db.query(`select 1 from email_outbox where leave_id = $1 and kind = 'office_certificate' and to_email = 'office@college.edu'`, [medRow.id])).rows.length === 1, 'the office is emailed straight away to check it (leave starts today)');
+ok((await db.query(`select 1 from all_mail where leave_id = $1 and kind = 'approver_new'`, [medRow.id])).rows.length === 0, 'the Dean still has not been emailed');
+await throwsLike(() => as(U.chair, () => db.query(`select public.decide_leave($1, true)`, [medRow.id])), /not checked the medical certificate/, 'the Dean still cannot decide');
+await throwsLike(() => as(U.aryan, () => db.query(`select public.review_certificate($1, true)`, [medRow.id])), /Only the Dean HRM Office/, 'students cannot check certificates');
 await throwsLike(() => as(U.office, () => db.query(`select public.review_certificate($1, false, '')`, [medRow.id])), /Say what is wrong/, 'returning a certificate needs a reason');
 await as(U.office, () => db.query(`select public.review_certificate($1, false, 'Certificate is unsigned.')`, [medRow.id]));
-ok((await one(`select status, doc_path from leave_requests where id = $1`, [medRow.id])).status === 'sanctioned', 'returned certificate sends it back to sanctioned');
-await as(U.aryan, () => db.query(`select public.attach_certificate($1, $2)`, [medRow.id, goodPath]));
-await as(U.office, () => db.query(`select public.review_certificate($1, true)`, [medRow.id]));
-ok((await one(`select status from leave_requests where id = $1`, [medRow.id])).status === 'approved', 'accepted certificate makes the leave final');
+const returned = await one(`select status, doc_path, doc_return_note, doc_deadline from leave_requests where id = $1`, [medRow.id]);
+ok(returned.status === 'submitted' && returned.doc_path === null && returned.doc_return_note === 'Certificate is unsigned.', 'a returned certificate goes back to the student with the reason');
+ok(new Date(returned.doc_deadline) - Date.now() >= 47 * 3600e3, 'the student has at least 48 hours for a new one');
+ok((await db.query(`select 1 from email_outbox where leave_id = $1 and kind = 'student_certificate'`, [medRow.id])).rows.length === 1, 'the student is emailed straight away');
+await throwsLike(() => as(U.office, () => db.query(`select public.review_certificate($1, true)`, [medRow.id])), /no certificate waiting/, 'nothing to check until a new one is uploaded');
+const goodPath2 = `${U.aryan.id}/${medRow.id}/signed.pdf`;
+await as(U.aryan, () => db.query(`insert into storage.objects (bucket_id, name) values ('certificates', $1)`, [goodPath2]));
+await as(U.aryan, () => db.query(`select public.attach_certificate($1, $2)`, [medRow.id, goodPath2]));
+ok((await one(`select doc_return_note from leave_requests where id = $1`, [medRow.id])).doc_return_note === null, 'a new upload clears the return note');
+await as(U.office, () => db.query(`select public.review_certificate($1, true, 'Signed by the campus doctor')`, [medRow.id]));
+ok((await one(`select doc_checked_at from leave_requests where id = $1`, [medRow.id])).doc_checked_at !== null, 'the office accepts the certificate');
+const toDean = (await db.query(`select to_email, channel, subject from all_mail where leave_id = $1 and kind = 'approver_new'`, [medRow.id])).rows;
+ok(toDean.some(m => m.to_email === 'dean@college.edu' && m.channel === 'now' && /ready for your decision/.test(m.subject)), 'now the Dean is emailed that it is ready for a decision');
+ok((await as(U.aryan, () => db.query(`select kind from leave_events where leave_id = $1 and kind = 'office_note'`, [medRow.id]))).rows.length === 0, 'the office note is not shown to the student');
+const dlg = await as(U.dean, () => db.query(`select * from storage.objects where name = $1`, [goodPath2]));
+ok(dlg.rows.length === 1, 'the Dean can open the certificate');
+await throwsLike(() => as(U.aryan, () => db.query(`select public.attach_certificate($1, $2)`, [medRow.id, goodPath])), /can no longer be changed/, 'a checked certificate cannot be swapped');
+const d1 = await as(U.chair, () => one(`select public.decide_leave($1, true) as s`, [medRow.id]));
+ok(d1.s === 'approved', 'medical leave approved by the Dean once the certificate is checked, and the approval is final');
+await throwsLike(() => as(U.chair, () => db.query(`select public.decide_leave($1, true)`, [medRow.id])), /already been decided/, 'cannot decide twice');
 
 const exp = await as(U.office, () => db.query(`select * from public.attendance_export($1::date, $2::date)`, [day(-1), day(10)]));
 ok(exp.rows.length === 2 + 4, `attendance export lists ${exp.rows.length} sessions`);
@@ -244,17 +268,31 @@ await db.query(`update faculty_acks set notified_at = now() - interval '49 hours
 await db.query(`set role service_role`);
 const j1 = (await one(`select public.run_scheduled_jobs() as j`)).j;
 await db.query(`reset role`);
-ok(j1.deemed === 2 && j1.escalated === 1, `after 49 hours: ${j1.deemed} deemed acknowledgments, ${j1.escalated} escalation`);
-ok((await db.query(`select * from all_mail where kind = 'escalation' and leave_id = $1`, [sickRow.id])).rows.length >= 2, 'approver and office reminded');
-await as(U.chair, () => db.query(`select public.decide_leave($1, true)`, [sickRow.id]));
+ok(j1.deemed === 2 && j1.escalated === 0, `after 49 hours: ${j1.deemed} deemed acknowledgments; no reminder to the Dean for a request still missing its certificate`);
 await db.query(`update leave_requests set doc_deadline = now() + interval '3 hours' where id = $1`, [sickRow.id]);
 const j2 = (await one(`select public.run_scheduled_jobs() as j`)).j;
-ok(j2.reminded === 1, 'certificate reminder sent within 24 hours of deadline');
+ok(j2.reminded === 1, 'missing certificate: reminder sent within 24 hours of the deadline');
 const j2b = (await one(`select public.run_scheduled_jobs() as j`)).j;
 ok(j2b.reminded === 0 && j2b.deemed === 0 && j2b.escalated === 0, 'jobs are idempotent');
 await db.query(`update leave_requests set doc_deadline = now() - interval '1 minute' where id = $1`, [sickRow.id]);
 const j3 = (await one(`select public.run_scheduled_jobs() as j`)).j;
-ok(j3.cancelled === 1 && (await one(`select status from leave_requests where id = $1`, [sickRow.id])).status === 'cancelled', 'missed deadline cancels the leave');
+ok(j3.cancelled === 1 && (await one(`select status from leave_requests where id = $1`, [sickRow.id])).status === 'cancelled', 'no certificate by the deadline cancels the request');
+
+const sick2 = await as(U.priya, () => one(`select public.submit_leave('medical', 'Migraine again', $1::date, $1::date, $2::uuid[], false, null, null, null, true) as ref`, [today, todayIds]));
+const sick2Row = await one(`select id from leave_requests where ref = $1`, [sick2.ref]);
+const sick2Path = `${U.priya.id}/${sick2Row.id}/cert.pdf`;
+await as(U.priya, () => db.query(`insert into storage.objects (bucket_id, name) values ('certificates', $1)`, [sick2Path]));
+await as(U.priya, () => db.query(`select public.attach_certificate($1, $2)`, [sick2Row.id, sick2Path]));
+await db.query(`update leave_requests set doc_uploaded_at = now() - interval '49 hours' where id = $1`, [sick2Row.id]);
+const j4 = (await one(`select public.run_scheduled_jobs() as j`)).j;
+const esc1 = (await db.query(`select to_email, link from all_mail where kind = 'escalation' and leave_id = $1`, [sick2Row.id])).rows;
+ok(j4.escalated === 1 && esc1.some(m => m.to_email === 'office@college.edu') && !esc1.some(m => m.to_email === 'dean@college.edu'), 'a certificate unchecked for 49 hours: the office is reminded, not the Dean');
+await as(U.office, () => db.query(`select public.review_certificate($1, true)`, [sick2Row.id]));
+await db.query(`update leave_requests set doc_checked_at = now() - interval '49 hours', doc_uploaded_at = now() - interval '100 hours' where id = $1`, [sick2Row.id]);
+const j5 = (await one(`select public.run_scheduled_jobs() as j`)).j;
+const esc2 = (await db.query(`select to_email from all_mail where kind = 'escalation' and leave_id = $1`, [sick2Row.id])).rows;
+ok(j5.escalated === 1 && esc2.some(m => m.to_email === 'dean@college.edu'), 'once checked, the Dean is reminded if no decision follows within the time');
+await as(U.office, () => db.query(`select public.office_cancel_leave($1, 'Student recovered and attended')`, [sick2Row.id]));
 await throwsLike(() => as(U.office, () => db.query(`select public.run_scheduled_jobs()`)), /permission denied/, 'clients cannot run the jobs');
 
 // Email queue -------------------------------------------------------------------
@@ -272,9 +310,9 @@ ok(m1.status === 'queued' && m1.last_error === 'timeout', 'failed email is retri
 await throwsLike(() => as(U.office, () => db.query(`select * from public.claim_emails(5)`)), /permission denied/, 'clients cannot claim emails');
 
 // Timeline ------------------------------------------------------------------------
-const tl = await as(U.priya, () => db.query(`select kind from leave_events where leave_id = $1 order by id`, [sickRow.id]));
-ok(!tl.rows.some(r => r.kind === 'escalated'), 'internal escalation hidden from the student timeline');
-ok(tl.rows.some(r => r.kind === 'cancelled'), 'student sees the cancellation in the timeline');
+const tl = await as(U.priya, () => db.query(`select kind from leave_events where leave_id = $1 order by id`, [sick2Row.id]));
+ok(!tl.rows.some(r => r.kind === 'escalated') && (await one(`select count(*)::int n from leave_events where leave_id = $1 and kind = 'escalated'`, [sick2Row.id])).n === 2, 'internal escalations hidden from the student timeline');
+ok((await as(U.priya, () => db.query(`select kind from leave_events where leave_id = $1 and kind = 'cancelled'`, [sickRow.id]))).rows.length === 1, 'student sees the cancellation in the timeline');
 
 
 // People admin ------------------------------------------------------------------
@@ -478,7 +516,8 @@ await throwsLike(() => as(U.aryan, () => db.query(`select public.office_file_lea
 await throwsLike(() => as(U.office, () => db.query(`select public.office_file_leave($1, 'medical', 'Hospital', $2::date, $3::date, '{}')`, [aryanId, day(-5), day(-4)])), /Say why the office is filing/, 'office must say why it is filing');
 const of = await as(U.office, () => one(`select public.office_file_leave($1, 'medical', 'Admitted to hospital with dengue', $2::date, $3::date, '{}', false, null, null, null, 'Father called the office on Monday') as ref`, [aryanId, day(-5), day(-4)]));
 const ofRow = await one(`select * from leave_requests where ref = $1`, [of.ref]);
-ok(ofRow.filed_by !== null && ofRow.status === 'submitted', `backdated medical leave filed by the office (${of.ref}), goes to the Dean`);
+ok(ofRow.filed_by !== null && ofRow.status === 'submitted' && ofRow.doc_checked_at !== null, `backdated medical leave filed by the office (${of.ref}) counts as checked`);
+ok((await db.query(`select 1 from all_mail where leave_id = $1 and kind = 'approver_new' and to_email = 'dean@college.edu'`, [ofRow.id])).rows.length === 1, 'and goes straight to the Dean');
 ok((await db.query(`select 1 from email_outbox where leave_id = $1 and kind = 'student_receipt' and subject like '%filed for you'`, [ofRow.id])).rows.length === 1, 'the student is told the office filed it');
 const stuEvents = await as(U.aryan, () => db.query(`select kind from leave_events where leave_id = $1`, [ofRow.id]));
 ok(stuEvents.rows.some(e => e.kind === 'submitted') && !stuEvents.rows.some(e => e.kind === 'office_note'), 'the student sees the filing but not the internal office note');
@@ -527,7 +566,8 @@ await throwsLike(() => as(U.aryan, () => db.query(`select public.pilot_metrics($
 const pm = (await as(U.office, () => one(`select public.pilot_metrics($1::date, $2::date) as m`, [day(-30), day(1)]))).m;
 ok(pm.requests.total > 5 && pm.decision.decided > 0 && pm.decision.pct !== null, `decision timing measured (${pm.decision.pct}% of ${pm.decision.decided + pm.decision.open_late} within ${pm.decision.window_hours} h)`);
 ok(pm.ack.total > 0 && pm.ack.pct !== null && pm.ack.deemed >= 2, `faculty responses measured (${pm.ack.pct}% in time, ${pm.ack.deemed} deemed)`);
-ok(pm.certificates.on_time === 1 && pm.certificates.missed === 1 && pm.certificates.pct === 50, `certificates on time measured (${pm.certificates.on_time} on time, ${pm.certificates.missed} missed)`);
+ok(pm.certificates.checked === 2 && pm.certificates.in_time === 1 && pm.certificates.pct === 50 && pm.certificates.returned === 1 && pm.certificates.missed === 1,
+  `certificate checks measured (${pm.certificates.in_time} of ${pm.certificates.checked} in time, ${pm.certificates.returned} returned, ${pm.certificates.missed} never uploaded)`);
 ok(Number(pm.survey.satisfaction) === 4.5 && pm.survey.answered === 2, `satisfaction averaged (${pm.survey.satisfaction} from ${pm.survey.answered})`);
 ok(pm.online.by_office === 1 && pm.decision.by_delegate === 1, 'office filings and delegate decisions counted');
 const pmb = (await as(U.dean, () => one(`select public.pilot_metrics($1::date, $2::date, '1999-01') as m`, [day(-30), day(1)]))).m;
@@ -582,11 +622,23 @@ const soonDay = (await one(`select public.local_date(now() + interval '1 hour'):
 const soonSess = (await one(`insert into class_sessions (course_code, faculty_id, batch, section, starts_at) values ('SOON', $1, '2025-27', 'A', now() + interval '1 hour') returning id`, [F.meera])).id;
 const soon = await as(U.priya, () => one(`select public.submit_leave('medical', 'Food poisoning', $1::date, $1::date, $2::uuid[], false, null, null, null, true) as ref`, [soonDay, [soonSess]]));
 const soonId = await bid(soon.ref);
+const soonPath = `${U.priya.id}/${soonId}/cert.pdf`;
+await as(U.priya, () => db.query(`insert into storage.objects (bucket_id, name) values ('certificates', $1)`, [soonPath]));
+await as(U.priya, () => db.query(`select public.attach_certificate($1, $2)`, [soonId, soonPath]));
+await as(U.office, () => db.query(`select public.review_certificate($1, true)`, [soonId]));
 const soonMail = (await db.query(`select channel, kind, to_email, thread_key, thread_subject from email_outbox o join (select 'now' channel) c on true where leave_id = $1`, [soonId])).rows;
 ok(soonMail.some(m => m.kind === 'faculty_notice' && m.to_email === 'meera@college.edu'), 'a notice for a class in the next 24 hours goes out straight away');
-ok(soonMail.some(m => m.kind === 'approver_new'), 'leave starting today or tomorrow reaches the Dean straight away');
+ok(soonMail.some(m => m.kind === 'office_certificate') && soonMail.some(m => m.kind === 'approver_new'), 'leave starting today or tomorrow reaches the office and then the Dean straight away');
 ok(soonMail.every(m => m.thread_key && m.thread_key.startsWith('lv-' + soonId)), 'instant emails about a request share a conversation key');
 ok(soonMail.some(m => m.thread_subject === `Leave ${soon.ref} · Priya K. Nair (UH25041)`), 'staff see one conversation per request');
+const soonNext = (await one(`select ($1::date + 1)::text d`, [soonDay])).d;
+const tsE = (await one(`select now() t`)).t;
+await as(U.priya, () => db.query(`select public.edit_leave($1, 'Food poisoning', $2::date, $3::date, $4::uuid[])`, [soonId, soonDay, soonNext, [soonSess]]));
+const reEdit = (await db.query(`select kind from all_mail where leave_id = $1 and created_at >= $2`, [soonId, tsE])).rows;
+ok((await one(`select doc_checked_at from leave_requests where id = $1`, [soonId])).doc_checked_at === null && reEdit.some(m => m.kind === 'office_certificate') && !reEdit.some(m => m.kind === 'approver_changed'),
+  'changing the dates of a checked medical request sends it back to the office to check again');
+await throwsLike(() => as(U.dean, () => db.query(`select public.decide_leave($1, true)`, [soonId])), /not checked/, 'the Dean waits for the new check');
+await as(U.office, () => db.query(`select public.review_certificate($1, true)`, [soonId]));
 await as(U.dean, () => db.query(`select public.decide_leave($1, true)`, [soonId]));
 ok((await one(`select thread_subject from email_outbox where leave_id = $1 and kind = 'student_decision'`, [soonId])).thread_subject === `Your leave request ${soon.ref}`, 'the student gets one conversation per request');
 ok((await db.query(`select 1 from email_outbox where kind = 'delegation_set' and to_email = 'office@college.edu'`)).rows.length === 0, 'delegation copies to the Dean and office are not sent');

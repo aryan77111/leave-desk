@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { ChevronRight, Plus } from 'lucide-react';
 import { StatusBadge } from '@/components/leave/badges';
 import { Alert, Card, EmptyState, LinkButton, PageHeader } from '@/components/ui/primitives';
-import { fmtRange, fmtStamp, TYPE_LABEL } from '@/lib/format';
+import { fmtRange, fmtStamp, medicalStep, TYPE_LABEL } from '@/lib/format';
 import { nextStep } from '@/lib/leave';
 import { requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -16,12 +16,12 @@ export default async function StudentHome() {
   const supabase = await createClient();
   const { data } = await supabase
     .from('leave_requests')
-    .select('id, ref, type, status, from_date, to_date, submitted_at, approver_level, doc_deadline, decision_note')
+    .select('id, ref, type, status, from_date, to_date, submitted_at, approver_level, doc_deadline, decision_note, doc_path, doc_checked_at, doc_return_note, cancel_reason')
     .eq('student_id', person.id)
     .order('from_date', { ascending: false })
     .limit(200);
   const leave = (data ?? []) as LeaveRequest[];
-  const due = leave.filter((l) => l.status === 'sanctioned');
+  const due = leave.filter((l) => medicalStep(l) === 'certificate');
 
   return (
     <>
@@ -32,8 +32,8 @@ export default async function StudentHome() {
       />
 
       {due.map((l) => (
-        <Alert key={l.id} tone="warn" className="mb-4" title={`Certificate needed for ${l.ref}`}>
-          Upload your medical certificate by {l.doc_deadline ? fmtStamp(l.doc_deadline) : 'the deadline'}.{' '}
+        <Alert key={l.id} tone="warn" className="mb-4" title={l.doc_return_note ? `New certificate needed for ${l.ref}` : `Certificate needed for ${l.ref}`}>
+          {l.doc_return_note ? 'The Dean HRM Office returned your certificate. Upload a new one' : 'Upload your medical certificate'} by {l.doc_deadline ? fmtStamp(l.doc_deadline) : 'the deadline'}.{' '}
           <Link href={`/student/leave/${l.ref}`} className="font-semibold underline underline-offset-2">Upload now</Link>
         </Alert>
       ))}
@@ -56,7 +56,7 @@ export default async function StudentHome() {
                     </div>
                     <p className="mt-1 truncate text-sm text-ink-muted">{nextStep(l, 'student')}</p>
                   </div>
-                  <StatusBadge status={l.status} />
+                  <StatusBadge status={l.status} step={medicalStep(l)} />
                   <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint group-hover:text-navy-700" />
                 </Link>
               </li>

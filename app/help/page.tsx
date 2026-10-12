@@ -37,15 +37,16 @@ function QA({ q, children }: { q: string; children: ReactNode }) {
   );
 }
 
-const STATUS_HELP: Record<string, string> = {
-  submitted: 'Waiting for the Dean. Faculty are told at the same time.',
-  sanctioned: 'Medical leave sanctioned provisionally. The certificate is due.',
-  documents_in: 'The certificate is uploaded and the Dean HRM Office is checking it.',
-  approved: 'Final. The sessions count as approved leave in attendance.',
-  rejected: 'Not approved. The reason is on the request.',
-  cancelled: 'Cancelled: certificate not uploaded in time, or cancelled by the Dean HRM Office with a reason.',
-  withdrawn: 'Withdrawn by the student before a decision.',
-};
+// In the order a request moves through them. Medical requests start with the certificate steps.
+const STATUS_HELP: [string, string][] = [
+  ['Certificate needed', 'Medical leave only: no certificate is attached yet, or the Dean HRM Office returned it. Upload one by the date shown, or the request is cancelled.'],
+  ['Certificate check', 'Medical leave only: the Dean HRM Office is checking the certificate. The request goes to the Dean after that.'],
+  [STATUS_LABEL.submitted, 'With the Dean. Faculty are told as soon as the request is made.'],
+  [STATUS_LABEL.approved, 'Final. The sessions count as approved leave in attendance.'],
+  [STATUS_LABEL.rejected, 'Not approved. The reason is on the request.'],
+  [STATUS_LABEL.cancelled, 'Cancelled: no certificate by the deadline, or cancelled by the Dean HRM Office with a reason.'],
+  [STATUS_LABEL.withdrawn, 'Withdrawn by the student before a decision.'],
+];
 
 export default async function HelpPage() {
   const supabase = createAnonClient();
@@ -92,15 +93,15 @@ export default async function HelpPage() {
             No. Your missed sessions are filled in from the timetable and each faculty member is emailed. Untick a session only if you will attend it.
           </QA>
           <QA q="Who decides?">
-            The Dean decides every request. If the Dean is away, a colleague the Dean has named may decide on the Dean’s behalf; the request says so.
+            The Dean decides every request. Medical requests reach the Dean once the Dean HRM Office has checked the certificate. If the Dean is away, a colleague the Dean has named may decide on the Dean’s behalf; the request says so.
           </QA>
           <QA q="Can I change or withdraw a request?">
             Yes, until it is decided. Open the request and choose <em>Change request</em> or <em>Withdraw</em>. Faculty whose sessions change are told automatically. After a decision, contact the Dean HRM Office.
           </QA>
           <QA q="What about the medical certificate?">
-            Medical leave is first sanctioned provisionally. Upload the certificate (PDF, JPG or PNG, up to 5 MB) within <strong>{days(h.doc_days)}</strong> of resuming classes.
-            You get a reminder a day before the deadline. If it is not uploaded in time, the leave is cancelled automatically and the absence counts as unapproved.
-            Only the Dean and the Dean HRM Office can see the certificate and the medical reason; faculty never can.
+            Attach it when you apply (PDF, JPG or PNG, up to 5 MB; a clear phone photo is fine). The Dean HRM Office checks it first, and then the request goes to the Dean, whose approval is final.
+            If the office returns it, you are emailed the reason and get at least two days to upload a new one. A request with no certificate is cancelled at the deadline shown on it, and the absence counts as unapproved.
+            Only the Dean HRM Office and the Dean can see the certificate and the medical reason; faculty never can.
           </QA>
           <QA q="I was in hospital and could not apply. What now?">
             Contact the Dean HRM Office as soon as you can. The office can file the request for you, even after the dates, and the Dean decides as usual.
@@ -133,10 +134,10 @@ export default async function HelpPage() {
 
         <Section id="dean" title="For the Dean">
           <QA q="Emails">
-            New requests arrive in <strong>one summary each morning at 08:00</strong>, with anything still waiting from earlier. Leave starting today or tomorrow, and concerns raised by faculty, are sent straight away. The approval queue is always up to date.
+            New requests arrive in <strong>one summary each morning at 08:00</strong>, with anything still waiting from earlier. Medical requests arrive once the Dean HRM Office has checked the certificate; you can open the certificate from the request. Leave starting today or tomorrow, and concerns raised by faculty, are sent straight away. The approval queue is always up to date.
           </QA>
           <QA q="Reminders">
-            If a request has no decision after {hours(h.escalate_hours)}, it is marked overdue in the next morning summary for the Dean and the Dean HRM Office.
+            If a request has no decision {hours(h.escalate_hours)} after reaching you, it is marked overdue in the next morning summary for the Dean and the Dean HRM Office.
           </QA>
           <QA q="Deciding several at once">
             In the approval queue, tick requests and approve them together. Requests where a faculty member raised a concern cannot be ticked; open them first. Rejections are always one at a time, with a reason.
@@ -148,10 +149,10 @@ export default async function HelpPage() {
 
         <Section id="statuses" title="What the statuses mean">
           <dl className="flex flex-col divide-y divide-dashed divide-line">
-            {Object.entries(STATUS_LABEL).map(([k, label]) => (
-              <div key={k} className="grid grid-cols-1 gap-0.5 py-2.5 first:pt-0 last:pb-0 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4">
+            {STATUS_HELP.map(([label, text]) => (
+              <div key={label} className="grid grid-cols-1 gap-0.5 py-2.5 first:pt-0 last:pb-0 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4">
                 <dt className="text-sm font-semibold text-ink">{label}</dt>
-                <dd className="text-sm text-ink-soft">{STATUS_HELP[k]}</dd>
+                <dd className="text-sm text-ink-soft">{text}</dd>
               </div>
             ))}
           </dl>

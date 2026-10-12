@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { AckBadge, StatusBadge } from '@/components/leave/badges';
 import { Card, KeyValues } from '@/components/ui/primitives';
-import { daysInclusive, fmtDay, fmtRange, fmtStamp, plural, TYPE_LABEL } from '@/lib/format';
+import { daysInclusive, fmtDay, fmtRange, fmtStamp, medicalStep, plural, TYPE_LABEL } from '@/lib/format';
 import { nextStep, sessionsByFaculty, type Concern, type LeaveDetailData } from '@/lib/leave';
 import type { LeaveEvent } from '@/lib/types';
 
@@ -16,6 +16,22 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
   const days = daysInclusive(leave.from_date, leave.to_date);
   const groups = sessionsByFaculty(leave);
   const isStaff = audience === 'staff';
+  const step = medicalStep(leave);
+
+  let certificate: ReactNode = null;
+  if (leave.type === 'medical') {
+    if (leave.doc_checked_at && leave.doc_path) {
+      certificate = <>Checked by the Dean HRM Office<span className="text-ink-muted"> · {fmtStamp(leave.doc_checked_at)}{isStaff && leave.checker ? ` (${leave.checker.full_name})` : ''}</span></>;
+    } else if (leave.doc_checked_at) {
+      certificate = 'Filed by the Dean HRM Office; no upload needed';
+    } else if (leave.doc_path) {
+      certificate = <>Attached<span className="text-ink-muted"> · {leave.doc_uploaded_at ? fmtStamp(leave.doc_uploaded_at) : ''} · not checked yet</span></>;
+    } else if (leave.status === 'submitted') {
+      certificate = leave.doc_return_note ? 'Returned to the student for a new one' : 'Not attached yet';
+    } else if (leave.status === 'approved' && !leave.doc_path) {
+      certificate = 'None on file';
+    }
+  }
 
   const facts = [
     ...(isStaff && leave.student
@@ -25,6 +41,7 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
     { label: 'Dates', value: `${fmtRange(leave.from_date, leave.to_date)} · ${plural(days, 'day')}` },
     { label: leave.filed_by ? 'Filed' : 'Submitted', value: <>{fmtStamp(leave.submitted_at)}{leave.filed_by && <span className="text-ink-muted"> · by the Dean HRM Office{isStaff && leave.filer ? ` (${leave.filer.full_name})` : ''}</span>}</> },
     ...(leave.edited_at ? [{ label: 'Last changed', value: fmtStamp(leave.edited_at) }] : []),
+    ...(certificate ? [{ label: 'Medical certificate', value: certificate }] : []),
     ...(isStaff && leave.decided_at && leave.decider
       ? [{ label: 'Decided', value: <>{fmtStamp(leave.decided_at)}<span className="text-ink-muted"> · {leave.decider.full_name}{leave.decided_by_delegate ? ', on behalf of the Dean' : ''}</span></> }]
       : []),
@@ -41,7 +58,7 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
         <Card>
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4">
             <p className="max-w-xl text-sm text-ink-soft">{nextStep(leave, audience, leave.faculty_acks)}</p>
-            <StatusBadge status={leave.status} />
+            <StatusBadge status={leave.status} step={step} />
           </div>
           <div className="px-5 py-5">
             <KeyValues items={facts} />

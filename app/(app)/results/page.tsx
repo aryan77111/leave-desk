@@ -16,7 +16,7 @@ type Metrics = {
   online: { pct: number | null; by_office: number; target: number };
   decision: { pct: number | null; in_time: number; decided: number; open_late: number; open_in_window: number; by_delegate: number; median_hours: number | null; window_hours: number; target: number };
   ack: { pct: number | null; in_time: number; late: number; deemed: number; pending: number; flagged: number; total: number; window_hours: number; target: number };
-  certificates: { pct: number | null; on_time: number; late: number; missed: number; waiting: number; target: number };
+  certificates: { pct: number | null; in_time: number; checked: number; open_late: number; waiting: number; returned: number; missed: number; window_hours: number; target: number };
   survey: { answered: number; satisfaction: number | null; ease: number | null; faster_yes: number; faster_answered: number; students: number | null; faculty: number | null; staff: number | null; target: number; open: boolean };
 };
 
@@ -108,9 +108,12 @@ export default async function ResultsPage({ searchParams }: { searchParams: Prom
               <p>{m.ack.in_time} of {m.ack.total - m.ack.pending} notices answered in time; {m.ack.deemed} deemed acknowledged{m.ack.late ? `, ${m.ack.late} answered late` : ''}.</p>
               <p className="mt-1 text-ink-muted">{m.ack.flagged} concern{m.ack.flagged === 1 ? '' : 's'} raised. {m.ack.pending ? `${m.ack.pending} still within their window.` : ''}</p>
             </Kpi>
-            <Kpi title="Medical certificates on time" value={fmtPct(m.certificates.pct)} target={`${m.certificates.target}%`} state={targetState(m.certificates.pct, m.certificates.target)}>
-              <p>{m.certificates.on_time} on time, {m.certificates.late} late, {m.certificates.missed} never uploaded.</p>
-              <p className="mt-1 text-ink-muted">Counts the first upload, even if the office later asked for a new one.{m.certificates.waiting ? ` ${m.certificates.waiting} not yet due.` : ''}</p>
+            <Kpi title={`Certificates checked within ${m.certificates.window_hours} hours`} value={fmtPct(m.certificates.pct)} target={`${m.certificates.target}%`} state={targetState(m.certificates.pct, m.certificates.target)}>
+              <p>{m.certificates.in_time} of {m.certificates.checked + m.certificates.open_late} checked in time by the Dean HRM Office{m.certificates.open_late ? `, including ${m.certificates.open_late} still waiting past the window` : ''}.</p>
+              <p className="mt-1 text-ink-muted">
+                {m.certificates.returned} returned to the student for a new one; {m.certificates.missed} request{m.certificates.missed === 1 ? '' : 's'} cancelled with no certificate.
+                {m.certificates.waiting ? ` ${m.certificates.waiting} waiting within the window.` : ''}
+              </p>
             </Kpi>
             <Kpi title="Requests made online by students" value={fmtPct(m.online.pct)} target="100%" state={targetState(m.online.pct, 100)}>
               <p>{m.requests.total - m.online.by_office} of {m.requests.total} filed by students themselves; {m.online.by_office} filed by the Dean HRM Office for a student.</p>

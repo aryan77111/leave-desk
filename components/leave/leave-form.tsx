@@ -1,6 +1,7 @@
 'use client';
-import { useActionState, useEffect, useMemo, useState } from 'react';
+import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
+import { FileUp } from 'lucide-react';
 import { Card, Field } from '@/components/ui/primitives';
 import { FormMessage, SubmitButton } from '@/components/ui/form';
 import { createClient } from '@/lib/supabase/client';
@@ -31,14 +32,16 @@ export type LeaveFormInitial = {
 };
 
 const TYPES: { value: LeaveType; hint: string }[] = [
-  { value: 'medical', hint: 'Illness or injury. Certificate needed.' },
+  { value: 'medical', hint: 'Illness or injury. Attach the certificate.' },
   { value: 'family', hint: 'Family events or emergencies.' },
   { value: 'official', hint: 'Competitions, conferences, university work.' },
 ];
 
 const OFFICE_MAX_DAYS = 120;
+const CERT_MAX_BYTES = 5 * 1024 * 1024;
+const CERT_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
 
-export function LeaveForm({ mode = 'apply', batch, section, rules, action, initial, hidden, studentName }: {
+export function LeaveForm({ mode = 'apply', batch, section, rules, action, initial, hidden, studentName, userId }: {
   mode?: LeaveFormMode;
   batch: string;
   section: string;
@@ -47,6 +50,8 @@ export function LeaveForm({ mode = 'apply', batch, section, rules, action, initi
   initial?: LeaveFormInitial;
   hidden?: Record<string, string>;
   studentName?: string;
+  /** The student's sign-in id: their certificate is uploaded into their own folder. Needed in apply mode. */
+  userId?: string;
 }) {
   const today = todayLocal();
   const isOffice = mode === 'office' || mode === 'amend';
@@ -58,7 +63,41 @@ export function LeaveForm({ mode = 'apply', batch, section, rules, action, initi
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Map<string, boolean>>(new Map());
-  const [state, formAction] = useActionState(action, null);
+  const [certFile, setCertFile] = useState<File | null>(null);
+  const [certError, setCertError] = useState<string | null>(null);
+  const certInput = useRef<HTMLInputElement>(null);
+  // If the request is refused (say, a date problem) the same file is not uploaded twice.
+  const uploaded = useRef<{ file: File; path: string } | null>(null);
+  const needsCert = mode === 'apply' && type === 'medical';
+
+  function pickCert(f: File | null) {
+    setCertError(null);
+    if (!f) { setCertFile(null); return; }
+    if (!CERT_TYPES.includes(f.type)) { setCertError('Upload a PDF, JPG or PNG file.'); setCertFile(null); return; }
+    if (f.size > CERT_MAX_BYTES) { setCertError('The file is larger than 5 MB. Scan at a lower resolution or upload a PDF.'); setCertFile(null); return; }
+    setCertFile(f);
+  }
+
+  // A medical certificate goes to storage first, straight from the browser; the request then
+  // carries its path. Other requests go to the server action as they are.
+  async function submit(prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+    form.delete('certificate');
+    if (needsCert) {
+      if (!certFile) return { error: 'Attach your medical certificate. The Dean HRM Office checks it before the request goes to the Dean.' };
+      let path = uploaded.current?.file === certFile ? uploaded.current.path : null;
+      if (!path) {
+        if (!userId) return { error: 'Sign in again and retry.' };
+        const safe = certFile.name.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-+|-+$/g, '').slice(-60) || 'certificate';
+        path = `${userId}/apply-${crypto.randomUUID()}/${safe}`;
+        const { error } = await createClient().storage.from('certificates').upload(path, certFile, { contentType: certFile.type, upsert: false });
+        if (error) return { error: 'The certificate did not upload. Check your connection and try again.' };
+        uploaded.current = { file: certFile, path };
+      }
+      form.set('doc_path', path);
+    }
+    return action(prev, form);
+  }
+  const [state, formAction] = useActionState(submit, null);
 
   const initialIds = useMemo(() => new Set(initial?.sessionIds ?? []), [initial]);
 
@@ -196,6 +235,28 @@ export function LeaveForm({ mode = 'apply', batch, section, rules, action, initi
           </div>
         </Card>
 
+        {needsCert && (
+          <Card title="Medical certificate" description="Checked by the Dean HRM Office before the request goes to the Dean. Seen only by them and the Dean; faculty never see it.">
+            <div className="flex flex-col gap-3 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => certInput.current?.click()}
+                className={clsx(
+                  'flex flex-col items-center gap-2 rounded border border-dashed px-4 py-6 text-center',
+                  certFile ? 'border-navy-700 bg-navy-50' : 'border-bronze-600/60 bg-gold-100/50 hover:bg-gold-100',
+                )}
+              >
+                <FileUp className="h-5 w-5 text-bronze-600" />
+                <span className="max-w-full truncate text-sm font-semibold text-ink">{certFile ? certFile.name : 'Choose the certificate'}</span>
+                <span className="text-xs text-ink-muted">{certFile ? 'Tap to choose a different file' : 'PDF, JPG or PNG, up to 5 MB. A clear phone photo is fine.'}</span>
+              </button>
+              <input ref={certInput} type="file" name="certificate" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" className="sr-only"
+                onChange={(e) => pickCert(e.target.files?.[0] ?? null)} aria-label="Medical certificate file" />
+              {certError && <p role="alert" className="text-sm text-bad-fg">{certError}</p>}
+            </div>
+          </Card>
+        )}
+
         <Card
           title={isOffice ? 'Sessions missed' : 'Sessions you will miss'}
           description={`Filled in from the timetable${studentName ? ` for ${studentName}` : ''} (${batch}, section ${section}). Untick a session only if ${who === 'you' ? 'you' : 'the student'} attended or will attend it.`}
@@ -273,7 +334,12 @@ export function LeaveForm({ mode = 'apply', batch, section, rules, action, initi
             <div><dt className="label-caps">Sessions</dt><dd className="mt-0.5 text-ink">{sessions ? plural(chosen.length, 'session') : '—'}</dd></div>
             <div><dt className="label-caps">Faculty {mode === 'apply' || mode === 'office' ? 'notified' : 'on the request'}</dt><dd className="mt-0.5 text-ink">{faculty.length ? faculty.join(', ') : 'None'}</dd></div>
             {mode !== 'amend' && (
-              <div><dt className="label-caps">Documents</dt><dd className="mt-0.5 text-ink">{type === 'medical' ? `Medical certificate within ${rules.docDays} days of resuming classes` : 'None needed'}</dd></div>
+              <div><dt className="label-caps">{type === 'medical' && !isOffice ? 'Who checks' : 'Documents'}</dt><dd className="mt-0.5 text-ink">{
+                type !== 'medical' ? 'None needed'
+                  : isOffice ? 'None needed when the office files it. It goes straight to the Dean.'
+                  : mode === 'edit' ? 'The Dean HRM Office, then the Dean. If you change the dates after the check, the office checks again.'
+                  : certFile ? 'The Dean HRM Office checks your certificate, then the Dean decides.' : 'Attach the certificate above. The Dean HRM Office checks it, then the Dean decides.'
+              }</dd></div>
             )}
             {(mode === 'edit' || mode === 'amend') && (
               <p className="text-xs text-ink-muted">Faculty whose sessions change are emailed again. Faculty no longer affected are told no response is needed.</p>
@@ -290,11 +356,12 @@ export function LeaveForm({ mode = 'apply', batch, section, rules, action, initi
             {mode === 'apply' && type === 'medical' && (
               <label className="flex items-start gap-3 text-xs text-ink-soft">
                 <input type="checkbox" name="consent" required className="mt-0.5 h-4 w-4 shrink-0 accent-navy-700" />
-                <span>I agree that my medical certificate will be stored securely, seen only by the Dean and the Dean HRM Office, and deleted at the end of the academic year.</span>
+                <span>I agree that my medical certificate will be stored securely, seen only by the Dean HRM Office and the Dean, and deleted at the end of the academic year.</span>
               </label>
             )}
             <FormMessage state={state} />
-            <SubmitButton pendingText={pendingLabel} disabled={problems.length > 0 || sessions === null} className="h-11 w-full lg:h-9">{submitLabel}</SubmitButton>
+            <SubmitButton pendingText={needsCert ? 'Uploading and submitting…' : pendingLabel} disabled={problems.length > 0 || sessions === null || (needsCert && !certFile)} className="h-11 w-full lg:h-9">{submitLabel}</SubmitButton>
+            {needsCert && !certFile && <p className="text-center text-xs text-ink-muted">Attach the medical certificate to submit.</p>}
           </div>
         </Card>
       </div>

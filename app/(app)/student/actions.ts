@@ -10,11 +10,16 @@ const UUID = /^[0-9a-f-]{36}$/i;
 const str = (v: FormDataEntryValue | null) => (typeof v === 'string' ? v.trim() : '');
 
 export async function submitLeave(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
-  await requireViewer('student');
+  const { userId } = await requireViewer('student');
   const type = str(form.get('type'));
   if (!['medical', 'family', 'official'].includes(type)) return { error: 'Choose the purpose of leave.' };
   const away = form.get('away') === 'on';
   const sessionIds = form.getAll('session').map(String).filter((id) => UUID.test(id));
+  // The browser has already put the certificate in the student's own folder.
+  const docPath = str(form.get('doc_path'));
+  if (type === 'medical' && (!docPath || !docPath.startsWith(`${userId}/`) || docPath.length > 300)) {
+    return { error: 'Attach your medical certificate. The Dean HRM Office checks it before the request goes to the Dean.' };
+  }
 
   const supabase = await createClient();
   const { data, error } = await supabase.rpc('submit_leave', {
@@ -30,8 +35,18 @@ export async function submitLeave(_prev: ActionResult | null, form: FormData): P
     p_consent: form.get('consent') === 'on',
   });
   if (error) return { error: readableError(error) };
+  const ref = data as string;
+
+  let certFailed = false;
+  if (type === 'medical') {
+    const { data: row } = await supabase.from('leave_requests').select('id').eq('ref', ref).single();
+    const { error: attachError } = row
+      ? await supabase.rpc('attach_certificate', { p_leave: row.id, p_path: docPath })
+      : { error: true };
+    certFailed = Boolean(attachError);
+  }
   revalidatePath('/student');
-  redirect(`/student/leave/${data as string}?submitted=1`);
+  redirect(`/student/leave/${ref}?submitted=1${certFailed ? '&cert=failed' : ''}`);
 }
 
 export async function editLeave(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
@@ -77,5 +92,5 @@ export async function attachCertificate(leaveId: string, path: string, ref: stri
   if (error) return { error: readableError(error) };
   revalidatePath(`/student/leave/${ref}`);
   revalidatePath('/student');
-  return { ok: 'Certificate uploaded. The Dean HRM Office will check it.' };
+  return { ok: 'Certificate uploaded. The Dean HRM Office will check it, then the request goes to the Dean.' };
 }

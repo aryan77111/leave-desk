@@ -35,7 +35,7 @@ export function RespondPanel({ onRespond, compact = false }: { onRespond: (kind:
             value={text}
             onChange={(e) => setText(e.target.value)}
             className="field-input"
-            placeholder={mode === 'flag' ? 'For example: evaluation in this session; a make-up is possible only if leave is sanctioned before it.' : 'For example: quiz that day, make-up at my discretion.'}
+            placeholder={mode === 'flag' ? 'For example: evaluation in this session; a make-up is possible only if leave is approved before it.' : 'For example: quiz that day, make-up at my discretion.'}
             autoFocus
           />
           <p className="text-xs text-ink-muted">

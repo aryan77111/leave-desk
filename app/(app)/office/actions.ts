@@ -20,7 +20,8 @@ export async function reviewCertificate(_prev: ActionResult | null, form: FormDa
   if (error) return { error: readableError(error) };
   revalidatePath(`/office/leave/${ref}`);
   revalidatePath('/office');
-  return { ok: accept ? 'Certificate accepted. The leave is now approved.' : 'Certificate returned. The student has been asked for a new one.' };
+  revalidatePath('/approve');
+  return { ok: accept ? 'Certificate accepted. The request is now with the Dean.' : 'Certificate returned. The student has been emailed and asked for a new one.' };
 }
 
 export type ImportResult = ActionResult & { inserted?: number; updated?: number; errors?: { row: number; email?: string; message: string }[] };
