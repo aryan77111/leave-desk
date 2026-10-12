@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { CertificatePicker } from '@/components/leave/certificate-picker';
+import { CertificateError, combinePages } from '@/lib/certificate';
 import { Button, Card } from '@/components/ui/primitives';
 import { createClient } from '@/lib/supabase/client';
 import { fmtStamp } from '@/lib/format';
@@ -23,15 +24,23 @@ export function CertificateUpload({ leaveId, leaveRef, userId, deadline, variant
   viewUrl?: string | null;
 }) {
   const [open, setOpen] = useState(variant !== 'replace');
-  const [file, setFile] = useState<File | null>(null);
+  const [pages, setPages] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
   async function upload() {
-    if (!file) return;
+    if (pages.length === 0) return;
     setBusy(true);
     setError(null);
+    let file: File;
+    try {
+      file = await combinePages(pages);
+    } catch (e) {
+      setError(e instanceof CertificateError ? e.message : 'The certificate could not be prepared. Try again, or take photos instead.');
+      setBusy(false);
+      return;
+    }
     const safe = file.name.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-+|-+$/g, '').slice(-60) || 'certificate';
     const path = `${userId}/${leaveId}/${Date.now()}-${safe}`;
     const supabase = createClient();
@@ -43,7 +52,7 @@ export function CertificateUpload({ leaveId, leaveRef, userId, deadline, variant
     }
     const res = await attachCertificate(leaveId, path, leaveRef);
     if (res.error) setError(res.error);
-    else { setDone(res.ok ?? 'Certificate uploaded.'); setFile(null); if (variant === 'replace') setOpen(false); }
+    else { setDone(res.ok ?? 'Certificate uploaded.'); setPages([]); if (variant === 'replace') setOpen(false); }
     setBusy(false);
   }
 
@@ -80,10 +89,10 @@ export function CertificateUpload({ leaveId, leaveRef, userId, deadline, variant
           </button>
         ) : (
           <>
-            <CertificatePicker file={file} onChange={(f) => { setFile(f); setError(null); }} disabled={busy} />
+            <CertificatePicker files={pages} onChange={(p) => { setPages(p); setError(null); }} disabled={busy} />
             <p className="text-xs text-ink-muted">Seen only by the Dean HRM Office and the Dean. Faculty cannot see it.</p>
             {error && <p role="alert" className="text-sm text-bad-fg">{error}</p>}
-            <Button onClick={upload} disabled={!file || busy}>{busy ? 'Uploading…' : variant === 'replace' ? 'Replace certificate' : 'Upload certificate'}</Button>
+            <Button onClick={upload} disabled={pages.length === 0 || busy}>{busy ? (pages.length > 1 ? 'Combining and uploading…' : 'Uploading…') : variant === 'replace' ? 'Replace certificate' : 'Upload certificate'}</Button>
           </>
         )}
       </div>

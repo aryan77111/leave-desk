@@ -2,6 +2,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { CertificatePicker } from '@/components/leave/certificate-picker';
+import { CertificateError, combinePages } from '@/lib/certificate';
 import { Card, Field } from '@/components/ui/primitives';
 import { FormMessage, SubmitButton } from '@/components/ui/form';
 import { createClient } from '@/lib/supabase/client';
@@ -61,24 +62,30 @@ export function LeaveForm({ mode = 'apply', batch, section, rules, action, initi
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Map<string, boolean>>(new Map());
-  const [certFile, setCertFile] = useState<File | null>(null);
+  const [certPages, setCertPages] = useState<File[]>([]);
   // If the request is refused (say, a date problem) the same file is not uploaded twice.
-  const uploaded = useRef<{ file: File; path: string } | null>(null);
+  const uploaded = useRef<{ pages: File[]; path: string } | null>(null);
   const needsCert = mode === 'apply' && type === 'medical';
 
   // A medical certificate goes to storage first, straight from the browser; the request then
   // carries its path. Other requests go to the server action as they are.
   async function submit(prev: ActionResult | null, form: FormData): Promise<ActionResult> {
     if (needsCert) {
-      if (!certFile) return { error: 'Attach your medical certificate. The Dean HRM Office checks it before the request goes to the Dean.' };
-      let path = uploaded.current?.file === certFile ? uploaded.current.path : null;
+      if (certPages.length === 0) return { error: 'Attach your medical certificate. The Dean HRM Office checks it before the request goes to the Dean.' };
+      let path = uploaded.current?.pages === certPages ? uploaded.current.path : null;
       if (!path) {
         if (!userId) return { error: 'Sign in again and retry.' };
-        const safe = certFile.name.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-+|-+$/g, '').slice(-60) || 'certificate';
+        let cert: File;
+        try {
+          cert = await combinePages(certPages);
+        } catch (e) {
+          return { error: e instanceof CertificateError ? e.message : 'The certificate could not be prepared. Try again, or take photos instead.' };
+        }
+        const safe = cert.name.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-+|-+$/g, '').slice(-60) || 'certificate';
         path = `${userId}/apply-${crypto.randomUUID()}/${safe}`;
-        const { error } = await createClient().storage.from('certificates').upload(path, certFile, { contentType: certFile.type, upsert: false });
+        const { error } = await createClient().storage.from('certificates').upload(path, cert, { contentType: cert.type, upsert: false });
         if (error) return { error: 'The certificate did not upload. Check your connection and try again.' };
-        uploaded.current = { file: certFile, path };
+        uploaded.current = { pages: certPages, path };
       }
       form.set('doc_path', path);
     }
@@ -225,7 +232,7 @@ export function LeaveForm({ mode = 'apply', batch, section, rules, action, initi
         {needsCert && (
           <Card title="Medical certificate" description="Checked by the Dean HRM Office before the request goes to the Dean. Seen only by them and the Dean; faculty never see it.">
             <div className="px-5 py-4">
-              <CertificatePicker file={certFile} onChange={setCertFile} />
+              <CertificatePicker files={certPages} onChange={setCertPages} />
             </div>
           </Card>
         )}
@@ -311,7 +318,7 @@ export function LeaveForm({ mode = 'apply', batch, section, rules, action, initi
                 type !== 'medical' ? 'None needed'
                   : isOffice ? 'None needed when the office files it. It goes straight to the Dean.'
                   : mode === 'edit' ? 'The Dean HRM Office, then the Dean. If you change the dates after the check, the office checks again.'
-                  : certFile ? 'The Dean HRM Office checks your certificate, then the Dean decides.' : 'Attach the certificate above. The Dean HRM Office checks it, then the Dean decides.'
+                  : certPages.length ? 'The Dean HRM Office checks your certificate, then the Dean decides.' : 'Attach the certificate above. The Dean HRM Office checks it, then the Dean decides.'
               }</dd></div>
             )}
             {(mode === 'edit' || mode === 'amend') && (
@@ -333,8 +340,8 @@ export function LeaveForm({ mode = 'apply', batch, section, rules, action, initi
               </label>
             )}
             <FormMessage state={state} />
-            <SubmitButton pendingText={needsCert ? 'Uploading and submitting…' : pendingLabel} disabled={problems.length > 0 || sessions === null || (needsCert && !certFile)} className="h-11 w-full lg:h-9">{submitLabel}</SubmitButton>
-            {needsCert && !certFile && <p className="text-center text-xs text-ink-muted">Attach the medical certificate to submit.</p>}
+            <SubmitButton pendingText={needsCert ? 'Uploading and submitting…' : pendingLabel} disabled={problems.length > 0 || sessions === null || (needsCert && certPages.length === 0)} className="h-11 w-full lg:h-9">{submitLabel}</SubmitButton>
+            {needsCert && certPages.length === 0 && <p className="text-center text-xs text-ink-muted">Attach the medical certificate to submit.</p>}
           </div>
         </Card>
       </div>
