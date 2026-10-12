@@ -77,16 +77,24 @@ Emails wait in the outbox until both are set; nothing is lost. Without a verifie
 - **Timetable** reads the Dean HRM Office's class-schedule Google Sheets directly (see below). For one-off sessions there is also **Import a CSV instead** at the bottom of the page.
 
 ### Live timetable from Google Sheets
-- Each batch's schedule sheet is connected on **Timetable → Live sheets**. Share the sheet as "Anyone with the link can view". Uploaded .xlsx files and native Google Sheets both work.
-- **Timetable → Course codes** says how to read the sheet: `TAMA_A12` means Talent Management, section A, Prof. Padhi; `DTHR_SB3` means Design Thinking with Prof. Bhattacharya for the whole batch; `MDI_7` (nothing between the code and the number) is a whole-batch course.
-- The `sync-timetable` edge function checks every sheet every 10 minutes (pg_cron job `leave-desk-sync-timetable`) and skips sheets that have not changed. **Sync now** runs it at once.
+- Each batch has one sheet per term, connected on **Timetable → Live sheets** (batch, term name such as "Term III", and the sheet link). Share the sheet as "Anyone with the link can view". Uploaded .xlsx files and native Google Sheets both work, and the schedule can be on any tab.
+- **Timetable → Course codes** says how to read each term's sheet, with its own list per term (courses do not carry over). `TAMA_A12` means Talent Management, section A, Prof. Padhi; `DTHR_SB3` means Design Thinking with Prof. Bhattacharya for the whole batch; `MDI_7` (nothing between the code and the number) is a whole-batch course. Faculty must be on People first.
+- The `sync-timetable` edge function checks every active sheet every 10 minutes (pg_cron job `leave-desk-sync-timetable`) and skips sheets that have not changed. **Sync now** runs it at once.
 - What a sync does:
   - Adds new classes and updates moved ones. Only upcoming classes change; the past is frozen.
-  - Classes removed from the sheet are marked cancelled, never deleted.
-  - A cell it cannot read (for example a new course code) is listed on the page, and classes in that slot are left alone.
-  - If a sync would cancel more than 30% of upcoming classes (minimum 20), it stops and waits for **Sync anyway**. This protects against a half-edited or broken sheet.
+  - A sheet only changes the classes it created, so next term's sheet can be added while this term is still running.
+  - Classes removed from a sheet are marked cancelled, never deleted.
+  - A cell it cannot read (for example a code not yet added) is listed on the page, and classes in that slot are left alone. A sheet with no course codes is not read at all.
+  - If a sync would cancel more than 30% of the sheet's upcoming classes (minimum 20), it stops and waits for **Sync anyway**.
   - Students on leave are told about changes in their dates. A moved class, or a new class of a core course or of an elective already on their leave, is added to the leave, and its faculty get the usual notice. Other new elective classes are only mentioned.
+  - After a sheet's last date has passed it is archived automatically and never read again. The office can also archive or bring back a sheet by hand.
 - **Recent changes** on the Timetable page lists what each sync changed.
+
+#### Starting a new term
+1. Add any new faculty on **People**.
+2. **Timetable → Add next term's sheet**: batch, term name, link.
+3. **Course codes**: add the new term's codes.
+4. **Sync now**, and check that no cells are listed as unreadable.
 
 The Dean HRM Office overview shows a checklist until these steps are done.
 

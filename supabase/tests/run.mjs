@@ -35,7 +35,7 @@ grant usage on schema storage to anon, authenticated;
 grant select, insert on storage.objects to authenticated;
 `;
 await db.exec(stub);
-for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql', '20261012000010_timetable_sync.sql']) {
+for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql', '20261012000010_timetable_sync.sql', '20261012000012_term_sheets.sql']) {
   try { await db.exec(readFileSync(new URL(f, MIG), 'utf8')); console.log('applied', f); }
   catch (e) { console.error('FAILED applying', f, '\n', e.message); process.exit(1); }
 }
@@ -306,7 +306,7 @@ ok(back.n === 2, 'restoring the batch reactivates them');
 console.log('\nTimetable sync');
 const fid = async e => (await one(`select id from people where email = $1`, [e])).id;
 const F = { meera: await fid('meera@college.edu'), sanjay: await fid('sanjay@college.edu'), chair: await fid('chair@college.edu') };
-await db.query(`insert into timetable_sources (batch, file_id) values ('2025-27', 'abcdefghijklmnopqrstuvwxyz12')`);
+const sheetA = (await one(`insert into timetable_sheets (batch, term, file_id) values ('2025-27', 'Term V', 'abcdefghijklmnopqrstuvwxyz12') returning id`)).id;
 const S = (date, start, code, faculty, section = 'A', elective = false, end = null) =>
   ({ date, start, end: end ?? `${String(Number(start.slice(0, 2)) + 1).padStart(2, '0')}:${start.slice(3)}`, code, name: code + ' course', faculty_id: faculty, section, elective });
 const base = [
@@ -315,7 +315,8 @@ const base = [
   S(day(31), '09:45', 'TAMA', F.meera), S(day(31), '09:45', 'TAMA', F.meera, 'B'),
   S(day(40), '09:45', 'TAMA', F.meera), S(day(40), '09:45', 'TAMA', F.meera, 'B'),
 ];
-const apply = (rows, prot = [], force = false) => one(`select public.apply_timetable('2025-27', $1::jsonb, $2::jsonb, $3) as r`, [JSON.stringify(rows), JSON.stringify(prot), force]).then(x => x.r);
+const applyTo = (sheet, rows, prot = [], force = false) => one(`select public.apply_timetable_sheet($4, $1::jsonb, $2::jsonb, $3) as r`, [JSON.stringify(rows), JSON.stringify(prot), force, sheet]).then(x => x.r);
+const apply = (rows, prot = [], force = false) => applyTo(sheetA, rows, prot, force);
 let r1 = await apply(base);
 ok(r1.status === 'ok' && r1.added === 8, `first sync adds ${r1.added} sessions`);
 r1 = await apply(base);
@@ -366,27 +367,47 @@ const r3 = await apply(missing, [{ date: day(31), start: '16:15' }]);
 ok(r3.cancelled === 0 && (await sess('CIB', day(31), '16:15')).cancelled === false, 'session in an unreadable slot is left alone');
 
 // Safety stop and the past.
-await db.query(`insert into class_sessions (course_code, faculty_id, batch, section, starts_at, source) values ('OLD', $1, '2025-27', 'A', now() - interval '2 days', 'sheet')`, [F.meera]);
+await db.query(`insert into class_sessions (course_code, faculty_id, batch, section, starts_at, source, sheet_id) values ('OLD', $1, '2025-27', 'A', now() - interval '2 days', 'sheet', $2)`, [F.meera, sheetA]);
 const many = [];
 for (let i = 41; i < 71; i++) many.push(S(day(i), '09:45', 'SLIM', F.sanjay), S(day(i), '09:45', 'SLIM', F.sanjay, 'B'));
 await apply([...missing, ...many], [{ date: day(31), start: '16:15' }]);
 const blocked = await apply([]);
 ok(blocked.status === 'blocked' && blocked.would_cancel > 60, `empty sheet is refused (would cancel ${blocked.would_cancel})`);
-ok((await one(`select count(*)::int n from class_sessions where batch = '2025-27' and source = 'sheet' and not cancelled and starts_at > now()`)).n > 60, 'nothing was cancelled');
+ok((await one(`select count(*)::int n from class_sessions where sheet_id = $1 and not cancelled and starts_at > now()`, [sheetA])).n > 60, 'nothing was cancelled');
 const forced = await apply([], [], true);
 ok(forced.status === 'ok' && forced.cancelled === blocked.would_cancel, 'Sync anyway applies it');
 ok((await one(`select cancelled from class_sessions where course_code = 'OLD'`)).cancelled === false, 'past sessions are never touched');
 
+// Next term's sheet, connected while this term is still running ---------------------
+const sheetB = (await one(`insert into timetable_sheets (batch, term, file_id) values ('2025-27', 'Term VI', 'zyxwvutsrqponmlkjihgfedcba98') returning id`)).id;
+await apply([S(day(75), '09:45', 'TAMA', F.meera), S(day(76), '09:45', 'TAMA', F.meera)]);
+const termB = [S(day(80), '09:45', 'NEWC', F.sanjay), S(day(80), '09:45', 'NEWC', F.sanjay, 'B'), S(day(76), '09:45', 'TAMA', F.chair)];
+const rB = await applyTo(sheetB, termB);
+ok(rB.added === 2 && rB.cancelled === 0, `next term's sheet adds its own classes (${rB.added}) and cancels none of this term's`);
+ok((await sess('TAMA', day(75), '09:45')).cancelled === false, 'this term\'s remaining classes stay on');
+const shared = await one(`select sheet_id, faculty_id from class_sessions where course_code = 'TAMA' and public.local_date(starts_at) = $1 and section = 'A'`, [day(76)]);
+ok(shared.sheet_id === sheetA && shared.faculty_id === F.meera, 'a class both sheets list stays with the sheet that has it');
+const rA = await apply([S(day(75), '09:45', 'TAMA', F.meera), S(day(76), '09:45', 'TAMA', F.meera)]);
+ok(rA.cancelled === 0 && (await one(`select count(*)::int n from class_sessions where course_code = 'NEWC' and not cancelled`)).n === 2, 're-syncing this term leaves next term\'s classes alone');
+await db.query(`update timetable_sheets set archived_at = now(), enabled = false where id = $1`, [sheetA]);
+await throwsLike(() => apply([]), /archived/, 'an archived sheet can no longer change anything');
+const rB2 = await applyTo(sheetB, termB);
+const takenOver = await one(`select sheet_id, faculty_id from class_sessions where course_code = 'TAMA' and public.local_date(starts_at) = $1 and section = 'A'`, [day(76)]);
+ok(rB2.changed >= 1 && takenOver.sheet_id === sheetB && takenOver.faculty_id === F.chair, 'once the old term is archived, the new sheet takes over classes it lists');
+
 // Access
-const studentSees = await as(U.aryan, () => db.query(`select * from timetable_sources`));
+const studentSees = await as(U.aryan, () => db.query(`select * from timetable_sheets`));
 ok(studentSees.rows.length === 0, 'students cannot see the sheet settings');
-await as(U.office, () => db.query(`insert into course_codes (batch, course_code, variant, course_name, faculty_id, sections) values ('2025-27', 'TAMA', 'A', 'Talent Management', $1, '{A}')`, [F.meera]));
-ok((await as(U.office, () => db.query(`select * from course_codes`))).rows.length === 1, 'office manages course codes');
-await throwsLike(() => as(U.office, () => db.query(`update timetable_sources set last_status = 'ok'`)), /permission denied/, 'office cannot fake the sync status');
+await as(U.office, () => db.query(`insert into sheet_course_codes (sheet_id, course_code, variant, course_name, faculty_id, sections) values ($2, 'TAMA', 'A', 'Talent Management', $1, '{A}')`, [F.meera, sheetA]));
+await as(U.office, () => db.query(`insert into sheet_course_codes (sheet_id, course_code, variant, course_name, faculty_id, sections) values ($2, 'TAMA', 'A', 'Something new', $1, '{A}')`, [F.chair, sheetB]));
+ok((await as(U.office, () => db.query(`select * from sheet_course_codes`))).rows.length === 2, 'each term has its own course codes, even with the same letters');
+await as(U.office, () => db.query(`delete from sheet_course_codes where sheet_id = $1`, [sheetB]));
+ok((await one(`select count(*)::int n from sheet_course_codes`)).n === 1, 'office can remove a course code');
+await throwsLike(() => as(U.office, () => db.query(`update timetable_sheets set last_status = 'ok'`)), /permission denied/, 'office cannot fake the sync status');
 await throwsLike(() => as(U.office, () => db.query(`delete from timetable_changes`)), /permission denied/, 'the change log cannot be edited');
-await as(U.office, () => db.query(`update timetable_sources set enabled = false`));
-ok((await one(`select enabled from timetable_sources`)).enabled === false, 'office can pause a sheet');
-await throwsLike(() => as(U.aryan, () => db.query(`insert into course_codes (batch, course_code, course_name, faculty_id, sections) values ('2025-27', 'HACK', 'x', $1, '{A}')`, [F.meera])), /row-level security/, 'students cannot add course codes');
+await as(U.office, () => db.query(`update timetable_sheets set enabled = false where id = $1`, [sheetB]));
+ok((await one(`select enabled from timetable_sheets where id = $1`, [sheetB])).enabled === false, 'office can pause a sheet');
+await throwsLike(() => as(U.aryan, () => db.query(`insert into sheet_course_codes (sheet_id, course_code, course_name, faculty_id, sections) values ($2, 'HACK', 'x', $1, '{A}')`, [F.meera, sheetB])), /row-level security/, 'students cannot add course codes');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

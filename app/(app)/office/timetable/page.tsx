@@ -7,7 +7,7 @@ import { sheetUrl } from '@/lib/sheet-link';
 import { requireViewer } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { TimetableImport } from './timetable-import';
-import { PauseToggle, SourceForm, SyncButton } from './sync-controls';
+import { ArchiveToggle, PauseToggle, SheetForm, SyncButton } from './sync-controls';
 
 export const metadata: Metadata = { title: 'Timetable' };
 
@@ -16,8 +16,8 @@ type Report = {
   sessions_in_sheet?: number; first_date?: string; last_date?: string; sheet_name?: string;
   unreadable_count?: number; unreadable?: Problem[]; skipped?: string[]; would_cancel?: number;
 };
-type Source = {
-  batch: string; file_id: string; enabled: boolean; last_checked_at: string | null; last_synced_at: string | null;
+type Sheet = {
+  id: string; batch: string; term: string; file_id: string; enabled: boolean; archived_at: string | null; last_checked_at: string | null; last_synced_at: string | null;
   last_status: 'ok' | 'error' | 'blocked' | null; last_message: string | null; last_report: Report | null;
 };
 type Change = { id: number; batch: string; section: string; course_code: string; starts_at: string; kind: 'added' | 'cancelled' | 'restored' | 'changed'; detail: string | null; created_at: string };
@@ -62,17 +62,19 @@ export default async function TimetablePage({ searchParams }: { searchParams: Pr
     query = query.eq('batch', b);
     if (s) query = query.eq('section', s);
   }
-  const [{ data }, { data: classes }, { data: srcData }, { data: changeData }, { data: codeRows }] = await Promise.all([
+  const [{ data }, { data: classes }, { data: sheetData }, { data: changeData }, { data: codeRows }] = await Promise.all([
     query,
     supabase.from('class_sessions').select('batch, section').gte('starts_at', dayStart(addDays(todayLocal(), -60)).toISOString()).limit(5000),
-    supabase.from('timetable_sources').select('batch, file_id, enabled, last_checked_at, last_synced_at, last_status, last_message, last_report').order('batch', { ascending: false }),
+    supabase.from('timetable_sheets').select('id, batch, term, file_id, enabled, archived_at, last_checked_at, last_synced_at, last_status, last_message, last_report').order('batch', { ascending: false }).order('created_at'),
     supabase.from('timetable_changes').select('id, batch, section, course_code, starts_at, kind, detail, created_at').order('created_at', { ascending: false }).order('starts_at').limit(40),
-    supabase.from('course_codes').select('batch'),
+    supabase.from('sheet_course_codes').select('sheet_id'),
   ]);
-  const sources = (srcData ?? []) as Source[];
+  const sheets = (sheetData ?? []) as Sheet[];
+  const active = sheets.filter((x) => !x.archived_at);
+  const archived = sheets.filter((x) => x.archived_at).sort((a, b) => (b.archived_at ?? '').localeCompare(a.archived_at ?? ''));
   const changes = (changeData ?? []) as Change[];
   const codeCount = new Map<string, number>();
-  for (const c of (codeRows ?? []) as { batch: string }[]) codeCount.set(c.batch, (codeCount.get(c.batch) ?? 0) + 1);
+  for (const c of (codeRows ?? []) as { sheet_id: string }[]) codeCount.set(c.sheet_id, (codeCount.get(c.sheet_id) ?? 0) + 1);
   const { data: studentBatches } = await supabase.from('people').select('batch').contains('roles', ['student']).not('batch', 'is', null).limit(5000);
   const knownBatches = [...new Set((studentBatches ?? []).map((p: { batch: string }) => p.batch))].sort().reverse();
   const rows = (data ?? []) as unknown as Row[];
@@ -92,51 +94,56 @@ export default async function TimetablePage({ searchParams }: { searchParams: Pr
         action={
           <>
             <LinkButton href="/office/timetable/courses" variant="secondary"><Settings2 className="h-4 w-4" />Course codes</LinkButton>
-            {sources.length > 0 && <SyncButton label="Sync now" variant="primary" />}
+            {active.length > 0 && <SyncButton label="Sync now" variant="primary" />}
           </>
         }
       />
 
-      <Card className="mb-6" title="Live sheets" description="Checked every 10 minutes. Classes removed from a sheet are marked cancelled; past classes are never changed.">
-        {sources.length === 0 ? (
+      <Card
+        className="mb-6"
+        title="Live sheets"
+        description="One sheet per batch per term, checked every 10 minutes. A sheet only changes its own classes, so next term's sheet can be added before this term ends. Past classes are never changed."
+      >
+        {active.length === 0 ? (
           <div className="px-5 py-5">
-            <p className="mb-4 text-sm text-ink-soft">Connect each batch's class-schedule sheet. Share the sheet as “Anyone with the link can view” first.</p>
-            <SourceForm batches={knownBatches} />
+            <p className="mb-4 text-sm text-ink-soft">Connect each batch's class-schedule sheet for the term. Share the sheet as “Anyone with the link can view” first.</p>
+            <SheetForm batches={knownBatches} />
           </div>
         ) : (
           <ul className="divide-y divide-line">
-            {sources.map((src) => {
-              const st = !src.enabled ? STATUS.paused : STATUS[src.last_status ?? 'new'];
-              const rep = src.last_report ?? {};
-              const codes = codeCount.get(src.batch) ?? 0;
+            {active.map((sh) => {
+              const st = !sh.enabled ? STATUS.paused : STATUS[sh.last_status ?? 'new'];
+              const rep = sh.last_report ?? {};
+              const codes = codeCount.get(sh.id) ?? 0;
               return (
-                <li key={src.batch} className="px-5 py-4">
+                <li key={sh.id} className="px-5 py-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-semibold text-ink">Batch {src.batch}</h3>
+                        <h3 className="text-base font-semibold text-ink">{sh.batch} · {sh.term}</h3>
                         <Badge tone={st.tone}>{st.label}</Badge>
-                        <a href={sheetUrl(src.file_id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-navy-700 hover:underline">
+                        <a href={sheetUrl(sh.file_id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-navy-700 hover:underline">
                           Open sheet<ExternalLink className="h-3.5 w-3.5" aria-hidden />
                         </a>
                       </div>
-                      <p className="mt-1 text-sm text-ink-soft">{src.last_message ?? 'Waiting for the first sync.'}</p>
+                      <p className="mt-1 text-sm text-ink-soft">{sh.last_message ?? (codes === 0 ? 'Waiting for course codes.' : 'Waiting for the first sync.')}</p>
                       <p className="mt-0.5 text-xs text-ink-muted">
-                        {src.last_checked_at ? `Checked ${fmtStamp(src.last_checked_at)}` : 'Not checked yet'}
+                        {sh.last_checked_at ? `Checked ${fmtStamp(sh.last_checked_at)}` : 'Not checked yet'}
                         {rep.sessions_in_sheet ? ` · ${rep.sessions_in_sheet} classes in the sheet` : ''}
                         {rep.first_date && rep.last_date ? `, ${fmtDay(rep.first_date)} to ${fmtDay(rep.last_date, true)}` : ''}
-                        {` · ${codes} course code${codes === 1 ? '' : 's'}`}
+                        {' · '}<Link href={`/office/timetable/courses#sheet-${sh.id}`} className="font-semibold text-navy-700 hover:underline">{codes} course code{codes === 1 ? '' : 's'}</Link>
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-start gap-3">
-                      {src.last_status === 'blocked' && <SyncButton batch={src.batch} force label="Sync anyway" />}
-                      <PauseToggle batch={src.batch} enabled={src.enabled} />
+                    <div className="flex flex-wrap items-start gap-4">
+                      {sh.last_status === 'blocked' && <SyncButton sheetId={sh.id} force label="Sync anyway" />}
+                      <PauseToggle id={sh.id} enabled={sh.enabled} />
+                      <ArchiveToggle id={sh.id} archived={false} />
                     </div>
                   </div>
 
                   {codes === 0 && (
                     <Alert tone="warn" className="mt-3">
-                      Add this batch's <Link href="/office/timetable/courses" className="font-semibold underline">course codes</Link> so the sheet can be read.
+                      Add this term's <Link href={`/office/timetable/courses#sheet-${sh.id}`} className="font-semibold underline">course codes</Link>. The sheet is read once they are in.
                     </Alert>
                   )}
                   {(rep.unreadable_count ?? 0) > 0 && (
@@ -155,19 +162,39 @@ export default async function TimetablePage({ searchParams }: { searchParams: Pr
                     <p className="mt-2 text-xs text-ink-muted">Not classes, skipped: {rep.skipped!.join(', ')}</p>
                   )}
                   <details className="mt-2 text-sm">
-                    <summary className="cursor-pointer text-ink-muted hover:text-ink">Change the sheet link</summary>
-                    <div className="mt-3"><SourceForm batch={src.batch} link={sheetUrl(src.file_id)} batches={knownBatches} /></div>
+                    <summary className="cursor-pointer text-ink-muted hover:text-ink">Change the link or term name</summary>
+                    <div className="mt-3"><SheetForm sheet={{ id: sh.id, batch: sh.batch, term: sh.term, link: sheetUrl(sh.file_id) }} batches={knownBatches} /></div>
                   </details>
                 </li>
               );
             })}
             <li className="px-5 py-3">
               <details className="text-sm">
-                <summary className="cursor-pointer font-semibold text-navy-700">Add another batch's sheet</summary>
-                <div className="mt-3"><SourceForm batches={knownBatches} /></div>
+                <summary className="cursor-pointer font-semibold text-navy-700">Add next term's sheet</summary>
+                <p className="mt-2 text-ink-muted">Add it any time, even before this term ends. Then add its course codes. This term's sheet is archived automatically after its last day.</p>
+                <div className="mt-3"><SheetForm batches={knownBatches} /></div>
               </details>
             </li>
           </ul>
+        )}
+        {archived.length > 0 && (
+          <details className="border-t border-line px-5 py-3 text-sm">
+            <summary className="cursor-pointer text-ink-muted hover:text-ink">Past terms ({archived.length})</summary>
+            <ul className="mt-2 divide-y divide-line">
+              {archived.map((sh) => (
+                <li key={sh.id} className="flex flex-wrap items-center justify-between gap-3 py-2">
+                  <span>
+                    <span className="font-semibold text-ink">{sh.batch} · {sh.term}</span>
+                    <span className="text-ink-muted"> · archived {fmtStamp(sh.archived_at!)}{sh.last_report?.sessions_in_sheet ? ` · ${sh.last_report.sessions_in_sheet} classes` : ''}</span>
+                  </span>
+                  <span className="flex items-center gap-4">
+                    <a href={sheetUrl(sh.file_id)} target="_blank" rel="noreferrer" className="font-semibold text-navy-700 hover:underline">Open sheet</a>
+                    <ArchiveToggle id={sh.id} archived />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
       </Card>
 
