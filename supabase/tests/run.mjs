@@ -35,7 +35,7 @@ grant usage on schema storage to anon, authenticated;
 grant select, insert on storage.objects to authenticated;
 `;
 await db.exec(stub);
-for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql', '20261012000010_timetable_sync.sql', '20261012000012_term_sheets.sql', '20261012000014_pilot_schema.sql', '20261012000015_pilot_access.sql', '20261012000016_pilot_leave_flow.sql', '20261012000017_pilot_reporting.sql']) {
+for (const f of ['20261012000001_core.sql', '20261012000002_workflow.sql', '20261012000003_storage.sql', '20261012000005_tuning.sql', '20261012000006_rename_office.sql', '20261012000007_dean_approves_all.sql', '20261012000008_people_admin.sql', '20261012000009_roll_order.sql', '20261012000010_timetable_sync.sql', '20261012000012_term_sheets.sql', '20261012000014_pilot_schema.sql', '20261012000015_pilot_access.sql', '20261012000016_pilot_leave_flow.sql', '20261012000017_pilot_reporting.sql', '20261012000018_gmail_sending.sql']) {
   try { await db.exec(readFileSync(new URL(f, MIG), 'utf8')); console.log('applied', f); }
   catch (e) { console.error('FAILED applying', f, '\n', e.message); process.exit(1); }
 }
@@ -541,6 +541,25 @@ ok((await one(`select public.run_scheduled_jobs() as j`)).j.error_alerts === 0, 
 ok((await as(U.office, () => db.query(`select last_run_at from job_runs where name = 'scheduled_jobs'`))).rows.length === 1, 'the last job run is recorded for System health');
 const help = (await asAnon(() => one(`select public.public_help() as h`))).h;
 ok(help.ack_hours === 48 && help.link_days === 7, 'the help page reads the rules without signing in');
+
+
+console.log('\nGmail sending');
+await throwsLike(() => as(U.aryan, () => db.query(`select public.gmail_connect_start()`)), /Only the Dean HRM Office/, 'only the office can start connecting Gmail');
+const gstate = (await as(U.office, () => one(`select public.gmail_connect_start() as s`))).s;
+ok(/^[0-9a-f]{48}$/.test(gstate), 'office gets a one-time state');
+await throwsLike(() => as(U.office, () => db.query(`select public.gmail_store_connection($1, 'tok', 'x@college.edu')`, [gstate])), /permission denied/, 'the app cannot store a token itself');
+await throwsLike(() => as(U.office, () => db.query(`select public.gmail_credentials()`)), /permission denied/, 'the app cannot read the token');
+await throwsLike(() => as(U.office, () => db.query(`select * from private.app_secrets`)), /permission denied/, 'the private schema is closed to clients');
+await db.query(`set role service_role`);
+ok((await one(`select public.gmail_store_connection('feedface', 'tok', 'x@college.edu') as r`)).r === false, 'an unknown state is refused');
+ok((await one(`select public.gmail_store_connection($1, 'refresh-123', 'DeanHRM_Office@College.edu') as r`, [gstate])).r === true, 'the edge function stores the connection');
+ok((await one(`select public.gmail_store_connection($1, 'other', 'evil@x.com') as r`, [gstate])).r === false, 'a state works only once');
+const creds = (await one(`select public.gmail_credentials() as c`)).c;
+await db.query(`reset role`);
+ok(creds.refresh_token === 'refresh-123' && creds.sender === 'deanhrm_office@college.edu', 'the email function reads the token and sender');
+ok((await as(U.office, () => one(`select gmail_sender from settings`))).gmail_sender === 'deanhrm_office@college.edu', 'settings show which account is connected');
+await as(U.office, () => db.query(`select public.gmail_disconnect()`));
+ok((await one(`select count(*)::int n from private.app_secrets where name = 'gmail_refresh_token' and value <> ''`)).n === 0 && (await one(`select gmail_sender from settings`)).gmail_sender === null, 'disconnecting removes the token');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

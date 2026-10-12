@@ -38,7 +38,7 @@ Phone layouts: lists become cards below tablet width, buttons are at least 44 px
 | Sign-in | Google, through Supabase Auth. Access is limited to people on the roster |
 | Files | Private Supabase Storage bucket `certificates`, 5 MB limit, PDF/JPG/PNG |
 | Scheduled jobs | `pg_cron`: workflow jobs every 10 minutes, email dispatch every minute |
-| Email | Edge Function `send-emails`, which sends the outbox through Resend |
+| Email | Edge Function `send-emails` sends the outbox through a connected college Gmail account (Gmail API), or Resend as a fallback; `gmail-connect` handles the Google sign-in |
 | Hosting | Vercel |
 
 All workflow rules live in the database (`supabase/migrations`). The app calls functions such as `submit_leave` and `decide_leave`, and each function checks the caller's role. Row-level security limits what each person can read:
@@ -81,14 +81,31 @@ All workflow rules live in the database (`supabase/migrations`). The app calls f
    ```
 3. Reload the app. You now see the Dean HRM Office menu.
 
-### 4. Turn on email (Resend)
-1. Create a Resend account and verify the college domain (or a domain you control). Then create an API key.
-2. In Supabase, open **Edge Functions → Secrets** and add `RESEND_API_KEY`.
-3. In the app, open **Rules and settings** and set:
-   - **App address**: the Vercel address
-   - **Email sender**: for example `Leave Desk <leave@college.edu>`
+### 4. Turn on email (Gmail through a college Google account)
+Leave Desk sends email through a college Google account, so mail comes from the real `xim.edu.in`
+address and needs no DNS changes. The account only grants permission to *send*; Leave Desk cannot read the inbox.
 
-Emails wait in the outbox until both are set; nothing is lost. Without a verified domain, Resend only delivers to the account owner's address.
+**Once, in Google Cloud (about 15 minutes):**
+1. Go to console.cloud.google.com and create a project, for example `leave-desk`.
+2. **APIs & Services → Library**: search for **Gmail API** and click **Enable**.
+3. **APIs & Services → OAuth consent screen** (also called Google Auth Platform → Branding/Audience):
+   - App name `Leave Desk`, your email as support and developer contact.
+   - User type: **Internal** if it is offered (only XIM accounts can connect, and Google shows no warning). Otherwise **External**.
+   - If External: under **Audience**, click **Publish app** so it is *In production*. Left in *Testing*, Google stops the connection after 7 days.
+   - Scopes: add `.../auth/gmail.send` (and `openid`, `email`).
+4. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
+   - Type **Web application**, name `Leave Desk email`.
+   - Authorised redirect URI: `https://ljqozmznjasgfjeshrfq.supabase.co/functions/v1/gmail-connect`
+   - Copy the **Client ID** and **Client secret**.
+5. In Supabase: **Edge Functions → Secrets**, add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
+**Then, in the app:** Rules and settings → **Email account → Connect Gmail**, and sign in with the account mail should come from.
+If Google says "Google hasn't verified this app", choose **Advanced → Go to Leave Desk**. Use **Switch to another account**
+later to move from a test account to the Dean HRM Office account. The **Email sender** setting gives the display name
+(for example `Leave Desk – Dean HRM Office <deanhrm_office@xim.edu.in>`).
+
+If no Google account is connected, the app falls back to Resend (`RESEND_API_KEY` secret, sender on a domain verified in Resend).
+Emails wait in the outbox until one of the two works; nothing is lost.
 
 ### 5. Fill in the help contact
 In **Rules and settings → Help page contact**, add the office desk name, email and phone. They appear on the public Help and rules page that every email links to.
@@ -148,7 +165,7 @@ npm install
 cp .env.example .env.local
 npm run dev          # http://localhost:3000 (add http://localhost:3000/auth/callback to Supabase redirect URLs)
 npm test             # date, routing and CSV unit tests
-npm run test:db      # 199 workflow and security tests against an in-process Postgres
+npm run test:db      # 210 workflow and security tests against an in-process Postgres
 npm run typecheck
 npm run build
 ```

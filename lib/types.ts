@@ -41,6 +41,8 @@ export type Settings = {
   target_ack_pct: number;
   target_cert_pct: number;
   target_satisfaction: number;
+  gmail_sender: string | null;
+  gmail_connected_at: string | null;
   updated_at: string;
 };
 

@@ -263,3 +263,22 @@ export async function setFeedbackStatus(id: number, status: 'new' | 'seen' | 'do
   revalidatePath('/office/feedback');
   return { ok: 'Saved.' };
 }
+
+// ---------------------------------------------------------------------------
+// Email account (Gmail)
+// ---------------------------------------------------------------------------
+export async function connectGmail(): Promise<void> {
+  await requireViewer('office');
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('gmail_connect_start');
+  if (error || !data) redirect('/office/settings?gmail=error&reason=Could%20not%20start#email');
+  redirect(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/gmail-connect?state=${data as string}`);
+}
+
+export async function disconnectGmail(): Promise<void> {
+  await requireViewer('office');
+  const supabase = await createClient();
+  await supabase.rpc('gmail_disconnect');
+  revalidatePath('/office/settings');
+  redirect('/office/settings?gmail=disconnected#email');
+}

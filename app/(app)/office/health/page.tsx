@@ -49,16 +49,17 @@ export default async function HealthPage() {
 
   const oldestAt = (oldest.data as { created_at: string } | null)?.created_at;
   const oldestMin = oldestAt ? (now - Date.parse(oldestAt)) / 6e4 : 0;
-  const configured = Boolean(s.app_url && s.email_from);
+  const configured = Boolean(s.app_url && (s.gmail_sender || s.email_from));
+  const via = s.gmail_sender ? `Gmail (${s.gmail_sender})` : `Resend (${s.email_from ?? 'no sender set'})`;
   checks.push({
     label: 'Email sending',
     state: !configured ? 'bad' : oldestMin > 15 ? 'bad' : (failed.count ?? 0) > 0 ? 'warn' : 'ok',
     detail: !configured
-      ? 'The app address or the email sender is not set, so emails are waiting in the outbox.'
+      ? 'The app address or the email account is not set, so emails are waiting in the outbox. Connect Gmail in Rules and settings.'
       : oldestMin > 15
-        ? `${queued.count} email${queued.count === 1 ? '' : 's'} waiting; the oldest for ${relativeHours(oldestAt!)}. Check the Resend key and that the sender's domain is verified.`
-        : `${queued.count ?? 0} waiting, ${failed.count ?? 0} failed in the last 7 days. Last sent ${lastSent.data ? fmtStamp((lastSent.data as { sent_at: string }).sent_at) : 'never'}. Sender: ${s.email_from}.`,
-    href: '/office/emails',
+        ? `${queued.count} email${queued.count === 1 ? '' : 's'} waiting; the oldest for ${relativeHours(oldestAt!)}. Sending through ${via}. If Gmail was disconnected or its password changed, reconnect it in Rules and settings.`
+        : `${queued.count ?? 0} waiting, ${failed.count ?? 0} failed in the last 7 days. Last sent ${lastSent.data ? fmtStamp((lastSent.data as { sent_at: string }).sent_at) : 'never'}. Sending through ${via}.`,
+    href: s.gmail_sender ? '/office/emails' : '/office/settings#email',
   });
 
   const sheetRows = (sheets.data ?? []) as { id: string; batch: string; term: string; last_checked_at: string | null; last_status: string | null; last_message: string | null }[];

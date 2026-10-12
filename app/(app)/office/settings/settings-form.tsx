@@ -48,8 +48,8 @@ export function SettingsForm({ settings }: { settings: Settings }) {
           <Field label="App address" htmlFor="app_url" hint="The web address where Leave Desk is deployed. Links in emails point here. Emails are not sent until this is set.">
             <input id="app_url" name="app_url" type="url" placeholder="https://leave-desk.vercel.app" defaultValue={settings.app_url ?? ''} className="field-input" />
           </Field>
-          <Field label="Email sender" htmlFor="email_from" hint="Must use a domain verified in Resend, for example Leave Desk <leave@college.edu>.">
-            <input id="email_from" name="email_from" placeholder="Leave Desk <leave@college.edu>" defaultValue={settings.email_from ?? ''} className="field-input" />
+          <Field label="Email sender" htmlFor="email_from" hint="The name recipients see, for example Leave Desk – Dean HRM Office <deanhrm_office@xim.edu.in>. With Gmail connected, the address is always the connected account. With Resend, the address must use a domain verified there.">
+            <input id="email_from" name="email_from" placeholder="Leave Desk – Dean HRM Office <deanhrm_office@xim.edu.in>" defaultValue={settings.email_from ?? ''} className="field-input" />
           </Field>
           <Field label="College email domains" htmlFor="allowed_domains" hint="For your records. Sign-in is limited by the roster in any case.">
             <input id="allowed_domains" name="allowed_domains" placeholder="xim.edu.in, stu.xim.edu.in" defaultValue={settings.allowed_domains.join(', ')} className="field-input" />
