@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { Analytics } from '@vercel/analytics/next';
 import '@fontsource-variable/montserrat/index.css';
 import './globals.css';
 
@@ -13,7 +14,10 @@ export const viewport: Viewport = { themeColor: '#003C6F', width: 'device-width'
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-IN">
-      <body className="min-h-screen font-sans">{children}</body>
+      <body className="min-h-screen font-sans">
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
