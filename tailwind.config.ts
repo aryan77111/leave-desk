@@ -1,7 +1,9 @@
 import type { Config } from 'tailwindcss';
 
-// Palette taken from xim.edu.in: deep navy primary, gold secondary.
-// Bronze is darkened from the site's #CD7F32 so white text on it passes contrast.
+// Leave Desk design tokens: refined institutional.
+// Palette from xim.edu.in: deep navy primary, gold secondary. Bronze is darkened from the site's
+// #CD7F32 so white text on it passes contrast. Source Serif 4 gives titles and figures a university's
+// voice; Source Sans 3 carries the working interface. Both are self-hosted (Fontsource).
 const config: Config = {
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
   theme: {
@@ -11,35 +13,54 @@ const config: Config = {
           50: '#EEF3F8',
           100: '#D6E2EE',
           200: '#ADC4DC',
-          300: '#7FA2C5',
+          300: '#8FAFD0',
           500: '#24598C',
           600: '#0F4A80',
           700: '#003C6F',
           800: '#002F58',
           900: '#012340',
+          950: '#011A31',
         },
         gold: { 100: '#FBF1D9', 300: '#EFD08A', 500: '#E4B84F', 700: '#8A6514', 900: '#5C430A' },
         bronze: { 600: '#A5611F' },
-        canvas: '#F5F6F8',
-        line: '#E1E5EB',
-        'line-strong': '#C9D0D9',
-        ink: { DEFAULT: '#18202B', soft: '#3A4452', muted: '#5D6878', faint: '#8A94A3' },
-        ok: { bg: '#E7F4EC', fg: '#17633D', line: '#B9DEC8' },
-        warn: { bg: '#FDF3DC', fg: '#7A5200', line: '#EFD493' },
-        bad: { bg: '#FCE9E7', fg: '#A3261E', line: '#F1BDB8' },
-        info: { bg: '#E8F0F8', fg: '#0B4A85', line: '#BCD2E8' },
-        quiet: { bg: '#EEF0F3', fg: '#4D5868', line: '#D5DAE1' },
+        canvas: '#F4F6F9',
+        line: '#E2E7EE',
+        'line-strong': '#C8D1DC',
+        ink: { DEFAULT: '#16202D', soft: '#364152', muted: '#5A6577', faint: '#8892A2' },
+        ok: { bg: '#E8F4EC', fg: '#16613B', line: '#BADDC8' },
+        warn: { bg: '#FDF4DE', fg: '#7A5200', line: '#EED395' },
+        bad: { bg: '#FCEAE8', fg: '#A3261E', line: '#F0BEB9' },
+        info: { bg: '#E9F0F8', fg: '#0B4A85', line: '#BDD2E8' },
+        quiet: { bg: '#EEF1F4', fg: '#4B5667', line: '#D6DCE3' },
       },
       fontFamily: {
-        sans: ['"Montserrat Variable"', 'Segoe UI', 'system-ui', 'sans-serif'],
+        sans: ['"Source Sans 3 Variable"', '"Segoe UI"', 'system-ui', 'sans-serif'],
+        serif: ['"Source Serif 4 Variable"', 'Georgia', '"Times New Roman"', 'serif'],
       },
+      // Source Sans runs smaller than Montserrat did: one step up keeps the same reading size
+      // without changing any spacing.
       fontSize: {
-        '2xs': ['0.6875rem', { lineHeight: '1rem', letterSpacing: '0.06em' }],
+        '2xs': ['0.75rem', { lineHeight: '1rem' }],
+        xs: ['0.8125rem', { lineHeight: '1.15rem' }],
+        sm: ['0.9375rem', { lineHeight: '1.4rem' }],
+        base: ['1rem', { lineHeight: '1.55rem' }],
       },
-      borderRadius: { DEFAULT: '6px' },
+      borderRadius: { DEFAULT: '6px', md: '8px', lg: '10px' },
       boxShadow: {
-        card: '0 1px 2px rgba(16, 24, 40, 0.04)',
-        pop: '0 8px 24px rgba(16, 24, 40, 0.12)',
+        // Cards are drawn with a border only; shadows are for things that float.
+        card: 'none',
+        pop: '0 12px 32px -8px rgba(1, 35, 64, 0.18), 0 2px 6px rgba(1, 35, 64, 0.06)',
+        press: 'inset 0 1px 0 rgba(255, 255, 255, 0.10)',
+      },
+      transitionTimingFunction: {
+        // Strong ease-out: immediate response, soft landing.
+        out: 'cubic-bezier(0.23, 1, 0.32, 1)',
+      },
+      keyframes: {
+        'rise-in': { from: { opacity: '0', transform: 'translateY(-4px)' }, to: { opacity: '1', transform: 'none' } },
+      },
+      animation: {
+        'rise-in': 'rise-in 180ms cubic-bezier(0.23, 1, 0.32, 1)',
       },
     },
   },

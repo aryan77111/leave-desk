@@ -83,7 +83,7 @@ export default async function CourseCodesPage() {
       )}
 
       {past.length > 0 && (
-        <details className="rounded-md border border-line bg-white px-5 py-4 shadow-card">
+        <details className="rounded-lg border border-line bg-white px-5 py-4 ">
           <summary className="cursor-pointer text-sm font-semibold text-ink">Past terms ({past.length})</summary>
           <p className="mt-2 text-sm text-ink-muted">Kept for reference. Archived sheets are no longer read.</p>
           {past.map((s) => {

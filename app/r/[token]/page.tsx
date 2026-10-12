@@ -51,10 +51,10 @@ export default async function TokenPage({ params }: { params: Promise<{ token: s
 
   return (
     <AuthFrame wide>
-      <div className="rounded-md border border-line bg-white shadow-card">
+      <div className="rounded-lg border border-line bg-white">
         <div className="border-b border-line px-6 py-5">
           <p className="text-sm text-ink-muted">Leave notice for {c.faculty_name}</p>
-          <h1 className="mt-1 text-xl font-semibold text-ink">{c.student_name} <span className="font-normal text-ink-muted">({c.student_no})</span></h1>
+          <h1 className="mt-1.5 font-serif text-[1.625rem] font-semibold leading-tight text-navy-900">{c.student_name} <span className="font-sans text-lg font-normal text-ink-muted">{c.student_no}</span></h1>
           <p className="mt-1 text-sm text-ink-soft">
             {TYPE_LABEL[c.type!]} leave · {fmtRange(c.from_date!, c.to_date!)}
             {c.type === 'medical' && <span className="text-ink-muted"> · for information</span>}
@@ -63,7 +63,7 @@ export default async function TokenPage({ params }: { params: Promise<{ token: s
         <div className="flex flex-col gap-5 px-6 py-5">
           <div>
             <h2 className="label-caps">Your sessions that will be missed</h2>
-            <ul className="mt-2 divide-y divide-line rounded border border-line">
+            <ul className="mt-2 divide-y divide-line rounded-md border border-line">
               {(c.sessions ?? []).map((s) => (
                 <li key={s.starts_at + s.course_code} className="flex flex-wrap gap-x-3 px-3.5 py-2.5 text-sm">
                   <span className="font-semibold text-ink">{s.course_code}</span>
@@ -76,7 +76,7 @@ export default async function TokenPage({ params }: { params: Promise<{ token: s
           {c.reason ? (
             <p className="text-sm text-ink"><span className="text-ink-muted">Reason: </span>{c.reason}</p>
           ) : (
-            <p className="text-sm text-ink-muted">The reason and medical certificate are visible to the Dean only.</p>
+            <p className="text-sm text-ink-muted">The reason and medical certificate are seen only by the Dean HRM Office and the Dean.</p>
           )}
 
           {c.state === 'open' && (

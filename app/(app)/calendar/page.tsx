@@ -103,7 +103,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
       {/* Wider screens: month grid */}
       <Card className="hidden md:block">
         <div className="grid grid-cols-7 border-b border-line bg-canvas">
-          {WEEKDAYS.map((w) => <div key={w} className="px-2 py-2 text-2xs font-semibold uppercase text-ink-muted">{w}</div>)}
+          {WEEKDAYS.map((w) => <div key={w} className="px-2 py-2 text-xs font-semibold text-ink-muted">{w}</div>)}
         </div>
         <div className="grid grid-cols-7">
           {Array.from({ length: lead }).map((_, i) => <div key={`lead${i}`} className="min-h-[110px] border-b border-r border-line bg-canvas/50" />)}

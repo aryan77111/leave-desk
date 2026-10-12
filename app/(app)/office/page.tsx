@@ -87,17 +87,26 @@ export default async function OfficeHome() {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Certificates to check" value={n(toCheck)} tone="warn" href="/office/leave?status=check" />
         <Stat label="Certificates missing" value={n(certMissing)} href="/office/leave?status=needed" />
         <Stat label="With the Dean" value={n(waiting)} href="/office/leave?status=submitted" />
         <Stat label="Overdue decisions" value={n(overdue)} tone="bad" href="/office/leave?status=submitted" />
-        <Stat label="Emails waiting" value={n(queued)} href="/office/emails" />
-        <Stat label="Emails failed" value={n(failed)} tone="bad" href="/office/emails?status=failed" />
-        <Stat label="New feedback" value={n(newFeedback)} tone="warn" href="/office/feedback" />
       </div>
+      <nav aria-label="System" className="mt-3 flex flex-wrap gap-x-6 gap-y-2 rounded-lg border border-line bg-white px-4 py-3 text-sm">
+        {[
+          { label: 'Emails waiting', value: n(queued), href: '/office/emails', bad: false },
+          { label: 'Emails failed', value: n(failed), href: '/office/emails?status=failed', bad: n(failed) > 0 },
+          { label: 'New feedback', value: n(newFeedback), href: '/office/feedback', bad: false },
+        ].map((x) => (
+          <Link key={x.label} href={x.href} className="group inline-flex items-baseline gap-2 rounded text-ink-muted hover:text-ink">
+            <span className={x.bad ? 'figure text-base font-semibold text-bad-fg' : 'figure text-base font-semibold text-navy-900'}>{x.value}</span>
+            <span className="underline-offset-4 group-hover:underline">{x.label}</span>
+          </Link>
+        ))}
+      </nav>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
         <Card title="Certificates to check" action={<LinkButton href="/office/leave?status=check" variant="ghost">View all</LinkButton>}>
           {checks.length === 0 ? <EmptyState title="Nothing to check" /> : (
             <TableWrap>

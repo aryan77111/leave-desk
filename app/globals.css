@@ -3,29 +3,56 @@
 @tailwind utilities;
 
 @layer base {
-  html { -webkit-text-size-adjust: 100%; }
+  html {
+    -webkit-text-size-adjust: 100%;
+    color-scheme: light;
+    -webkit-tap-highlight-color: transparent;
+  }
   body {
-    @apply bg-canvas text-ink antialiased;
-    font-feature-settings: 'tnum' 1;
+    @apply bg-canvas font-sans text-ink antialiased;
+    font-optical-sizing: auto;
+    text-rendering: optimizeLegibility;
   }
   h1, h2, h3 { text-wrap: balance; }
-  :focus-visible { outline: 2px solid #E4B84F; outline-offset: 2px; }
-  ::selection { background: #D6E2EE; }
+  p, li, dd { text-wrap: pretty; }
+  a, button, input, select, textarea, label { touch-action: manipulation; }
+  input, textarea { caret-color: theme('colors.navy.600'); }
+
+  /* Focus: navy on light surfaces, gold on the navy shell. */
+  :focus-visible { outline: 2px solid theme('colors.navy.600'); outline-offset: 2px; border-radius: 4px; }
+  .on-navy :focus-visible { outline-color: theme('colors.gold.500'); }
+
+  ::selection { background: theme('colors.gold.300'); color: theme('colors.navy.950'); }
+  .on-navy ::selection { background: theme('colors.gold.500'); color: theme('colors.navy.950'); }
+
+  /* Quiet scrollbars where content scrolls inside a panel. */
+  .scroll-quiet { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.18) transparent; }
+  .scroll-quiet::-webkit-scrollbar { width: 6px; }
+  .scroll-quiet::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 999px; }
 }
 
 @layer components {
   .field-input {
     @apply block w-full rounded border border-line-strong bg-white px-3 py-2 text-sm text-ink placeholder:text-ink-faint
-           focus:border-navy-600 focus:outline-none focus:ring-2 focus:ring-navy-100 disabled:bg-canvas disabled:text-ink-muted;
+           transition-[border-color,box-shadow] duration-150 ease-out
+           hover:border-ink-faint/70
+           focus:border-navy-600 focus:outline-none focus:ring-[3px] focus:ring-navy-100
+           disabled:bg-canvas disabled:text-ink-muted;
   }
-  .label-caps { @apply text-2xs font-semibold uppercase text-ink-muted; }
-  .data-table { @apply w-full border-collapse text-sm; }
-  .data-table th { @apply whitespace-nowrap border-b border-line bg-canvas px-4 py-2.5 text-left text-2xs font-semibold uppercase text-ink-muted; }
+  select.field-input { @apply bg-white text-ink; }
+  /* Small sentence-case labels (field names, table and key-value labels). */
+  .label-caps { @apply text-xs font-semibold text-ink-muted; }
+  .data-table { @apply w-full border-collapse text-sm; font-variant-numeric: tabular-nums; }
+  .data-table th { @apply whitespace-nowrap border-b border-line bg-canvas/70 px-4 py-2.5 text-left text-xs font-semibold text-ink-muted; }
   .data-table td { @apply border-b border-line px-4 py-3 align-top; }
   .data-table tbody tr:last-child td { @apply border-b-0; }
-  .data-table tbody tr.row-link:hover { @apply bg-navy-50/60; }
+  .data-table tbody tr.row-link { @apply transition-colors duration-150; }
+  .data-table tbody tr.row-link:hover { @apply bg-navy-50/50; }
+  .figure { @apply font-serif; font-variant-numeric: lining-nums tabular-nums; }
 }
 
+/* Reduced motion: no movement, but feedback that is not movement (colour, the loading spinner) stays. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition: none !important; animation: none !important; }
+  *, *::before, *::after { scroll-behavior: auto !important; }
+  *:not(.animate-spin) { animation-duration: 1ms !important; animation-iteration-count: 1 !important; }
 }

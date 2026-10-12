@@ -11,7 +11,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
   }, [error]);
   return (
     <div className="mx-auto max-w-lg px-4 py-16">
-      <div className="rounded-md border border-line bg-white p-7 shadow-card">
+      <div className="rounded-lg border border-line bg-white p-7 ">
         <h1 className="text-xl font-semibold text-ink">Something went wrong</h1>
         <p className="mt-2 text-sm text-ink-muted">
           The page could not load. The Dean HRM Office has been told automatically. Try again, and if it keeps happening, use “Report a problem” at the bottom of any page.

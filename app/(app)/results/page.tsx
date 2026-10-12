@@ -29,7 +29,7 @@ const STATE_STYLE: Record<TargetState, string> = {
 
 function Kpi({ title, value, target, state, children }: { title: string; value: string; target: string; state: TargetState; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col rounded-md border border-line bg-white shadow-card">
+    <section className="flex flex-col rounded-lg border border-line bg-white">
       <div className="flex items-start justify-between gap-3 px-5 pt-4">
         <h2 className="text-sm font-semibold text-ink">{title}</h2>
         <span className={clsx('whitespace-nowrap rounded px-2 py-0.5 text-xs font-semibold ring-1 ring-inset', STATE_STYLE[state])}>{TARGET_LABEL[state]}</span>
@@ -129,7 +129,7 @@ export default async function ResultsPage({ searchParams }: { searchParams: Prom
                   : 'The survey is closed; the Dean HRM Office opens it near the end of the pilot.'}
               </p>
             </Kpi>
-            <section className="rounded-md border border-line bg-white px-5 py-4 shadow-card">
+            <section className="rounded-lg border border-line bg-white px-5 py-4 ">
               <h2 className="text-sm font-semibold text-ink">Requests</h2>
               <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                 {[

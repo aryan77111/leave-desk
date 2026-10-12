@@ -21,8 +21,8 @@ const DEFAULTS: Help = {
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-6 rounded-md border border-line bg-white shadow-card">
-      <h2 className="border-b border-line px-5 py-3.5 text-[15px] font-semibold text-ink">{title}</h2>
+    <section id={id} className="scroll-mt-6 rounded-lg border border-line bg-white">
+      <h2 className="border-b border-line px-5 py-4 font-serif text-[1.1875rem] font-semibold text-navy-900">{title}</h2>
       <div className="px-5 py-4">{children}</div>
     </section>
   );
@@ -58,11 +58,11 @@ export default async function HelpPage() {
 
   return (
     <div className="min-h-screen">
-      <header className="bg-navy-800">
+      <header className="on-navy bg-navy-900">
         <div className="mx-auto flex max-w-3xl flex-wrap items-baseline justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="flex items-baseline gap-3">
-            <span className="text-[17px] font-bold tracking-tight text-white">Leave Desk</span>
-            <span className="text-2xs font-semibold uppercase text-gold-500">{h.programme_name}</span>
+            <span className="font-serif text-[1.25rem] font-semibold leading-none tracking-[-0.01em] text-white">Leave Desk</span>
+            <span className="text-xs font-semibold text-gold-300">{h.programme_name} · XIM University</span>
           </div>
           <Link href={signedIn ? '/' : '/login'} className="text-sm font-semibold text-gold-300 hover:text-gold-100">
             {signedIn ? 'Back to Leave Desk' : 'Sign in'}
@@ -72,7 +72,7 @@ export default async function HelpPage() {
 
       <main className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">Help and rules</h1>
+          <h1 className="font-serif text-[2rem] font-semibold leading-tight tracking-[-0.012em] text-navy-900">Help and rules</h1>
           <p className="mt-1 text-sm text-ink-muted">How leave works on Leave Desk, in plain words. The numbers below are the rules the Dean has set today.</p>
           <nav aria-label="On this page" className="mt-4 flex flex-wrap gap-2 text-sm">
             {[['students', 'Students'], ['faculty', 'Faculty'], ['dean', 'The Dean'], ['statuses', 'What the statuses mean'], ['contact', 'Contact']].map(([id, label]) => (

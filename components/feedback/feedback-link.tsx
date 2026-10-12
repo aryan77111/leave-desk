@@ -41,7 +41,7 @@ export function FeedbackLink() {
         onClick={(e) => { if (e.target === dialog.current) close(); }}
       >
         <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-          <h2 id="feedback-title" className="text-[15px] font-semibold text-ink">Tell the Dean HRM Office</h2>
+          <h2 id="feedback-title" className="font-serif text-xl font-semibold text-navy-900">Tell the Dean HRM Office</h2>
           <button type="button" onClick={close} className="rounded p-1.5 text-ink-muted hover:bg-canvas" aria-label="Close"><X className="h-4 w-4" /></button>
         </div>
         {result?.ok ? (

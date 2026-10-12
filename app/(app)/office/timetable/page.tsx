@@ -264,7 +264,7 @@ export default async function TimetablePage({ searchParams }: { searchParams: Pr
         )}
       </Card>
 
-      <details className="mt-6 rounded-md border border-line bg-white px-5 py-4 shadow-card">
+      <details className="mt-6 rounded-lg border border-line bg-white px-5 py-4 ">
         <summary className="cursor-pointer text-sm font-semibold text-ink">Import a CSV instead</summary>
         <p className="mt-2 text-sm text-ink-muted">For one-off sessions that are not in a sheet. One row per session; faculty must already be on the roster. Dates as YYYY-MM-DD or DD/MM/YYYY; times as 09:45 or 9.45 AM. Add a 'cancelled' column with yes to cancel a session. Sessions imported this way are not touched by the sheet sync.</p>
         <div className="mt-3"><TimetableImport /></div>

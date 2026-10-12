@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ChevronRight, Plus } from 'lucide-react';
 import { StatusBadge } from '@/components/leave/badges';
+import { RoutingBar } from '@/components/leave/routing-slip';
 import { Alert, Card, EmptyState, LinkButton, PageHeader } from '@/components/ui/primitives';
 import { fmtRange, fmtStamp, medicalStep, TYPE_LABEL } from '@/lib/format';
 import { nextStep } from '@/lib/leave';
@@ -16,7 +17,7 @@ export default async function StudentHome() {
   const supabase = await createClient();
   const { data } = await supabase
     .from('leave_requests')
-    .select('id, ref, type, status, from_date, to_date, submitted_at, approver_level, doc_deadline, decision_note, doc_path, doc_checked_at, doc_return_note, cancel_reason')
+    .select('id, ref, type, status, from_date, to_date, submitted_at, approver_level, doc_deadline, decision_note, doc_path, doc_checked_at, doc_return_note, cancel_reason, filed_by, decided_at, closed_at')
     .eq('student_id', person.id)
     .order('from_date', { ascending: false })
     .limit(200);
@@ -47,17 +48,19 @@ export default async function StudentHome() {
           <ul className="divide-y divide-line">
             {leave.map((l) => (
               <li key={l.id}>
-                <Link href={`/student/leave/${l.ref}`} className="group flex items-center gap-4 px-5 py-4 hover:bg-navy-50/50">
+                <Link href={`/student/leave/${l.ref}`} className="group flex items-center gap-4 px-5 py-4 transition-colors duration-150 hover:bg-navy-50/40">
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="text-sm font-semibold text-ink">{fmtRange(l.from_date, l.to_date)}</span>
-                      <span className="text-sm text-ink-muted">{TYPE_LABEL[l.type]}</span>
-                      <span className="text-xs text-ink-faint">{l.ref}</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[0.9375rem] font-semibold text-ink">{fmtRange(l.from_date, l.to_date)}</p>
+                        <p className="text-sm text-ink-muted">{TYPE_LABEL[l.type]} · {l.ref}</p>
+                      </div>
+                      <StatusBadge status={l.status} step={medicalStep(l)} />
                     </div>
-                    <p className="mt-1 truncate text-sm text-ink-muted">{nextStep(l, 'student')}</p>
+                    <RoutingBar leave={l} className="mt-3 max-w-xs" />
+                    <p className="mt-2 line-clamp-2 text-sm text-ink-muted">{nextStep(l, 'student')}</p>
                   </div>
-                  <StatusBadge status={l.status} step={medicalStep(l)} />
-                  <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint group-hover:text-navy-700" />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint transition-transform duration-150 ease-out group-hover:translate-x-0.5 group-hover:text-navy-700" aria-hidden />
                 </Link>
               </li>
             ))}

@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { AckBadge, StatusBadge } from '@/components/leave/badges';
+import { AckBadge } from '@/components/leave/badges';
+import { RoutingSlip } from '@/components/leave/routing-slip';
 import { Card, KeyValues } from '@/components/ui/primitives';
-import { daysInclusive, fmtDay, fmtRange, fmtStamp, medicalStep, plural, TYPE_LABEL } from '@/lib/format';
+import { daysInclusive, fmtDay, fmtRange, fmtStamp, plural, TYPE_LABEL } from '@/lib/format';
 import { nextStep, sessionsByFaculty, type Concern, type LeaveDetailData } from '@/lib/leave';
 import type { LeaveEvent } from '@/lib/types';
 
@@ -16,7 +17,6 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
   const days = daysInclusive(leave.from_date, leave.to_date);
   const groups = sessionsByFaculty(leave);
   const isStaff = audience === 'staff';
-  const step = medicalStep(leave);
 
   let certificate: ReactNode = null;
   if (leave.type === 'medical') {
@@ -54,11 +54,13 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
 
   return (
     <div className={aside ? 'grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]' : 'grid grid-cols-1 gap-6'}>
-      <div className="flex min-w-0 flex-col gap-6">
-        <Card>
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4">
-            <p className="max-w-xl text-sm text-ink-soft">{nextStep(leave, audience, leave.faculty_acks)}</p>
-            <StatusBadge status={leave.status} step={step} />
+      <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6">
+        <Card className="order-1">
+          <div className="px-5 pb-4 pt-5">
+            <RoutingSlip leave={leave} />
+          </div>
+          <div className="border-y border-line bg-canvas/60 px-5 py-3">
+            <p className="max-w-[68ch] text-sm text-ink-soft">{nextStep(leave, audience, leave.faculty_acks)}</p>
           </div>
           <div className="px-5 py-5">
             <KeyValues items={facts} />
@@ -66,7 +68,7 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
         </Card>
 
         {isStaff && concerns && concerns.length > 0 && (
-          <div className="rounded-md border border-bad-line bg-bad-bg px-5 py-4">
+          <div className="order-3 rounded-lg border border-bad-line bg-bad-bg px-5 py-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-bad-fg">
               <AlertTriangle className="h-4 w-4" /> {plural(concerns.length, 'concern')} raised by faculty
             </div>
@@ -81,7 +83,7 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
           </div>
         )}
 
-        <Card title="Missed sessions and faculty responses" description={groups.length ? undefined : 'No classes fall on these dates.'}>
+        <Card className="order-3" title="Missed sessions and faculty responses" description={groups.length ? undefined : 'No classes fall on these dates.'}>
           {groups.length > 0 && (
             <ul className="divide-y divide-line">
               {groups.map((g) => (
@@ -93,7 +95,7 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
                         <li key={s.starts_at + s.course_code}><span className="font-medium text-ink">{s.course_code}</span> · {fmtStamp(s.starts_at)}</li>
                       ))}
                     </ul>
-                    {g.note && <p className="mt-2 rounded border-l-2 border-gold-500 bg-gold-100/60 px-3 py-2 text-sm text-ink">{g.note}</p>}
+                    {g.note && <p className="mt-2.5 max-w-prose rounded-md bg-gold-100/70 px-3 py-2 text-sm text-ink ring-1 ring-inset ring-gold-300/70">“{g.note}”</p>}
                     {!isStaff && g.status === 'flagged' && <p className="mt-2 text-xs text-ink-muted">This faculty member shared a point with the Dean.</p>}
                   </div>
                   <div className="flex flex-col items-start gap-1 sm:items-end">
@@ -106,7 +108,7 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
           )}
         </Card>
 
-        <Card title="History" description={isStaff ? 'Every step, who took it and when. Entries marked “office only” are not shown to the student.' : undefined}>
+        <Card className="order-3" title="History" description={isStaff ? 'Every step, who took it and when. Entries marked “office only” are not shown to the student.' : undefined}>
           <ol className="px-5 py-2">
             {events.map((e) => (
               <li key={e.id} className="grid grid-cols-1 gap-0.5 border-b border-dashed border-line py-3 last:border-b-0 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-4">
@@ -125,7 +127,7 @@ export function LeaveDetail({ leave, events, concerns, audience, aside }: {
           </ol>
         </Card>
       </div>
-      {aside && <div className="order-first flex flex-col gap-6 lg:order-none">{aside}</div>}
+      {aside && <div className="order-2 flex flex-col gap-6 lg:order-none">{aside}</div>}
     </div>
   );
 }

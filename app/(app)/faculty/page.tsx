@@ -39,7 +39,7 @@ export default async function FacultyHome() {
             <div className="grid grid-cols-1 gap-5 px-5 py-5 md:grid-cols-[minmax(0,1fr)_auto]">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span className="text-[15px] font-semibold text-ink">{it.student_name}</span>
+                  <span className="text-base font-semibold text-ink">{it.student_name}</span>
                   <span className="text-sm text-ink-muted">{it.student_no}</span>
                   <span className="text-xs text-ink-faint">{it.ref}</span>
                 </div>
